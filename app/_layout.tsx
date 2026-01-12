@@ -1,7 +1,7 @@
+import { useFonts } from 'expo-font';
 import { SplashScreen, Stack } from "expo-router";
-import './globals.css'
-import {useFonts} from 'expo-font'
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import './globals.css';
 
 export default function RootLayout() {
   const [fontsLoaded, error] = useFonts ({
@@ -13,10 +13,23 @@ export default function RootLayout() {
 
   })
 
+  // useEffect(() => {
+  //   // Handle 401 errors globally
+  //   setUnauthorizedHandler(() => {
+  //     router.replace('/(auth)/Welcome');
+  //   });
+  // }, []);
+
   useEffect (()=>{
     if(error) throw error;
     if(fontsLoaded) SplashScreen.hideAsync();
   },[fontsLoaded,error])
 
-  return <Stack  screenOptions={{headerShown:false}}/>;
+  return ( 
+  <Stack screenOptions={{ headerShown: false }}>
+      {/* <Stack.Screen name="index" /> */}
+      <Stack.Screen name="(auth)" />
+      <Stack.Screen name="(tabs)" />
+    </Stack>
+  )
 }
