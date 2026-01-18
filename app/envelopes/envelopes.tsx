@@ -1,12 +1,12 @@
 import { router } from 'expo-router';
 import React, { Component } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 export class Envelopes extends Component {

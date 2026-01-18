@@ -12,8 +12,8 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import Envelopes from '../(tabs)/Envelopes';
 import axiosInstance from '../../axiosinstance';
+import Envelopes from '../envelopes/envelopes';
 
 export class index extends Component {
   state = {
