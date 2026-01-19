@@ -1,50 +1,35 @@
-# Welcome to your Expo app 👋
+# 💸 Pesa Wallet
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Pesa Wallet is a **React Native mobile wallet application** designed to provide users with a simple, secure, and efficient way to manage their digital finances. The app enables users to store value, send and receive money, and track transactions seamlessly from their mobile devices.
 
-## Get started
+Built with usability and security in mind, Pesa Wallet delivers a clean and intuitive mobile experience while maintaining a scalable architecture that supports future financial features and enhancements.
 
-1. Install dependencies
+## ✨ Features
 
-   ```bash
-   npm install
-   ```
+### 🔐 User Authentication
+- Secure user registration and login
+- PIN-based access control
 
-2. Start the app
+### 💼 Wallet Management
+- Real-time wallet balance display
+- Clear overview of available funds
 
-   ```bash
-   npx expo start
-   ```
+### 💸 Money Transfers
+- Send money to other users
+- Receive funds instantly
 
-In the output, you'll find options to open the app in a
+### 📊 Transaction Tracking
+- Detailed transaction history
+- Timestamped records for all wallet activities
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### 🛡️ Security
+- Secure authentication flows
+- Protected access to sensitive wallet data
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### 📱 User Experience
+- Clean and intuitive mobile interface
+- Optimized for both Android and iOS platforms
 
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### ⚙️ Scalable Architecture
+- Built with React Native for cross-platform support
+- Easily extendable for future features

@@ -1,12 +1,12 @@
 import React from 'react'
 import { Text, View } from 'react-native'
 
-const CreateEnvelope = () => {
+const edit = () => {
   return (
     <View>
-      <Text>CreateEnvelope</Text>
+      <Text>edit</Text>
     </View>
   )
 }
 
-export default CreateEnvelope
+export default edit

@@ -1,12 +1,12 @@
 import { router } from 'expo-router';
 import React, { Component } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 export class Envelopes extends Component {
@@ -45,6 +45,10 @@ export class Envelopes extends Component {
     router.push(`/envelope/${envelopeId}/transactions`);
   };
 
+  handleCreateEnvelope = () => {
+    router.push('/envelopes/create')
+  }
+
   handleDeleteClick = (envelope) => {
     this.setState({ deleteModal: { show: true, envelope } });
   };
@@ -82,7 +86,7 @@ export class Envelopes extends Component {
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-xl font-bold text-gray-900">Digital Envelopes</Text>
             <TouchableOpacity
-              onPress={onCreateEnvelope}
+              onPress={this.handleCreateEnvelope}
               className="flex-row items-center gap-1"
             >
               <Text className="text-blue-600 font-semibold">+ New</Text>
