@@ -58,7 +58,7 @@ const Profile = () => {
     try {
       await AsyncStorage.removeItem('token');
       await AsyncStorage.removeItem('user');
-      router.replace('/signin');
+      router.replace('/SignIn');
     } catch (error) {
       console.error('Logout failed:', error);
     }
@@ -177,7 +177,7 @@ const Profile = () => {
         <View className="px-6 mt-4 mb-6">
           <Text className="font-semibold text-gray-900 text-lg mb-4">Income Management</Text>
           <TouchableOpacity
-            onPress={() => router.push('/income')}
+            onPress={() => router.push('/income/income')}
             className="bg-blue-200 rounded-2xl p-5"
           >
             <View className="flex-row items-center justify-between">
@@ -243,7 +243,7 @@ const Profile = () => {
         <View className="px-6 mt-6 mb-6">
           <View className="bg-white rounded-2xl border border-gray-100">
             <TouchableOpacity 
-              onPress={() => router.push('/account-management')}
+              onPress={() => router.push('/accountmanagement')}
               className="p-4 flex-row items-center justify-between border-b border-gray-100"
             >
               <Text className="text-gray-900 font-medium">Accounts Management</Text>
