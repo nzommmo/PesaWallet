@@ -356,7 +356,7 @@ export class index extends Component {
                   <Text className="text-gray-900 font-semibold">💳 Pay</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => router.push('/top-up')}
+                  onPress={() => router.push('/topup')}
                   className="flex-1 bg-white/20 py-3 rounded-xl items-center"
                 >
                   <Text className="text-white font-semibold">➕ Top Up</Text>
