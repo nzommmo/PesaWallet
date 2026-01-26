@@ -1,14 +1,17 @@
 import { useRouter } from 'expo-router';
-import { AlertCircle, ArrowLeft, CheckCircle, Plus, TrendingUp } from 'lucide-react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { AlertCircle, ArrowLeft, CheckCircle, CreditCard, RefreshCw, TrendingUp } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    ScrollView,
-    StatusBar,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Linking,
+  ScrollView,
+  StatusBar,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axiosInstance from '../axiosinstance';
@@ -17,15 +20,51 @@ const topup = () => {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [loadingAccount, setLoadingAccount] = useState(true);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
   const [primaryAccount, setPrimaryAccount] = useState(null);
+  const [pendingReference, setPendingReference] = useState(null);
 
   useEffect(() => {
     fetchPrimaryAccount();
+
+    // Listen for deep link when returning from Paystack
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+
+    // Check if app was opened with a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
+
+  const handleDeepLink = ({ url }) => {
+    console.log('Deep link received:', url);
+
+    // Parse the URL: pesawallet://payment/verify?reference=xxx
+    try {
+      const urlParts = url.split('?');
+      const queryString = urlParts[1];
+      
+      if (queryString) {
+        const params = new URLSearchParams(queryString);
+        const reference = params.get('reference');
+        
+        if (reference) {
+          console.log('Reference found from deep link:', reference);
+          setPendingReference(null); // Clear pending reference
+          verifyPayment(reference);
+        }
+      }
+    } catch (error) {
+      console.error('Error parsing deep link:', error);
+    }
+  };
 
   const fetchPrimaryAccount = async () => {
     setLoadingAccount(true);
@@ -49,12 +88,71 @@ const topup = () => {
     }
   };
 
+  const verifyPayment = async (reference) => {
+    setVerifying(true);
+    setError('');
+    
+    try {
+      console.log('Verifying payment with reference:', reference);
+      
+      // Use fetch instead of axiosInstance because verify endpoint is public (no auth needed)
+      const response = await fetch(
+        `http://192.168.0.101:8000/api/top-up/verify/?reference=${reference}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const data = await response.json();
+      console.log('Verification response:', data);
+
+      if (data.status === 'success' || data.status === 'already_processed') {
+        setSuccess(true);
+        setPendingReference(null);
+        
+        // Refresh balance immediately
+        await fetchPrimaryAccount();
+        
+        Alert.alert(
+          'Success!',
+          `Payment verified! Your account has been topped up with KES ${data.amount}.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                setAmount('');
+                setSuccess(false);
+              },
+            },
+          ]
+        );
+      } else {
+        setError(`Payment verification failed: ${data.message || 'Unknown error'}. Please contact support if you were charged.`);
+        Alert.alert('Error', 'Payment verification failed. Please contact support if you were charged.');
+      }
+    } catch (err) {
+      console.error('Verification error:', err);
+      setError('Failed to verify payment. Please contact support if you were charged.');
+      Alert.alert('Error', 'Failed to verify payment. Please contact support if you were charged.');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const handleTopUp = async () => {
     setError('');
     setSuccess(false);
 
     if (!amount || parseFloat(amount) <= 0) {
       setError('Please enter a valid amount');
+      return;
+    }
+
+    if (parseFloat(amount) < 100) {
+      setError('Minimum top-up amount is KES 100');
       return;
     }
 
@@ -66,34 +164,84 @@ const topup = () => {
     setLoading(true);
 
     try {
-      await axiosInstance.post('/top-up/', {
-        account_id: primaryAccount.id,
-        amount: parseFloat(amount),
-        description: description.trim() || undefined
-      });
-
-      setSuccess(true);
+      console.log('Initiating top-up with amount:', amount);
       
-      setPrimaryAccount({
-        ...primaryAccount,
-        balance: parseFloat(primaryAccount.balance) + parseFloat(amount)
+      const data = await axiosInstance.post('/top-up/', {
+        amount: parseFloat(amount),
+        platform: 'mobile' // Specify mobile platform
       });
 
-      setAmount('');
-      setDescription('');
+      console.log('Top-up response:', data);
 
-      setTimeout(() => {
-        router.replace('/');
-      }, 2000);
+      // Check if we got the authorization URL from Paystack
+      if (data && data.authorization_url) {
+        console.log('Opening Paystack:', data.authorization_url);
+        console.log('Payment reference:', data.reference);
+        
+        // Store the reference for manual verification
+        setPendingReference(data.reference);
+        
+        // Open Paystack in browser
+        const result = await WebBrowser.openBrowserAsync(data.authorization_url);
+        
+        console.log('Browser closed with type:', result.type);
+        
+        // When browser closes, ask user if they completed payment
+        setTimeout(() => {
+          Alert.alert(
+            'Payment Status',
+            'Did you complete the payment successfully?',
+            [
+              {
+                text: 'No, Cancel',
+                style: 'cancel',
+                onPress: () => {
+                  setPendingReference(null);
+                }
+              },
+              {
+                text: 'Yes, Verify Now',
+                onPress: () => {
+                  if (data.reference) {
+                    console.log('User confirmed payment, verifying:', data.reference);
+                    verifyPayment(data.reference);
+                  }
+                }
+              }
+            ]
+          );
+        }, 500); // Small delay to ensure browser is fully closed
+        
+      } else {
+        console.error('No authorization_url in response:', data);
+        setError('Failed to initialize payment. Please try again.');
+      }
     } catch (err) {
       console.error('Top up error:', err);
-      setError(err.message || 'Failed to Top Up Account. Please try again.');
+      
+      const errorMessage = err.error || 
+                          err.message || 
+                          'Failed to initialize payment. Please try again.';
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   const quickAmounts = [1000, 5000, 10000, 20000];
+
+  if (verifying) {
+    return (
+      <SafeAreaView className="flex-1 bg-gray-50">
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#22c55e" />
+          <Text className="mt-4 text-base text-gray-600">Verifying payment...</Text>
+          <Text className="mt-2 text-sm text-gray-500">Please wait</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
@@ -115,6 +263,30 @@ const topup = () => {
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <View className="px-6 py-6">
+          {/* Pending Payment Notice */}
+          {pendingReference && (
+            <View className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+              <View className="flex-row items-start gap-3 mb-3">
+                <AlertCircle size={20} color="#f59e0b" />
+                <View className="flex-1">
+                  <Text className="text-sm text-yellow-800 font-medium">
+                    Pending Payment
+                  </Text>
+                  <Text className="text-xs text-yellow-700 mt-1">
+                    You have a pending payment. Tap below to verify and update your balance.
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => verifyPayment(pendingReference)}
+                className="bg-yellow-600 py-2 px-4 rounded-lg flex-row items-center justify-center gap-2"
+              >
+                <RefreshCw size={16} color="#fff" />
+                <Text className="text-white font-semibold text-sm">Verify Payment Now</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Loading State */}
           {loadingAccount && (
             <View className="items-center justify-center py-12">
@@ -126,9 +298,14 @@ const topup = () => {
           {success && (
             <View className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex-row items-start gap-3">
               <CheckCircle size={20} color="#16a34a" />
-              <Text className="flex-1 text-sm text-green-800 font-medium">
-                Account Topped Up successfully! Redirecting...
-              </Text>
+              <View className="flex-1">
+                <Text className="text-sm text-green-800 font-medium">
+                  Payment verified successfully!
+                </Text>
+                <Text className="text-xs text-green-700 mt-1">
+                  Your account has been topped up
+                </Text>
+              </View>
             </View>
           )}
 
@@ -166,7 +343,7 @@ const topup = () => {
                     setError('');
                   }}
                   keyboardType="numeric"
-                  placeholder="0"
+                  placeholder="Enter amount (min. 100)"
                   placeholderTextColor="#9ca3af"
                   editable={!loading}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white text-gray-900 text-lg"
@@ -202,21 +379,6 @@ const topup = () => {
                 </View>
               </View>
 
-              {/* Description (Optional) */}
-              <View className="mb-6">
-                <Text className="text-sm font-medium text-gray-700 mb-2">
-                  Description (Optional)
-                </Text>
-                <TextInput
-                  value={description}
-                  onChangeText={setDescription}
-                  placeholder="e.g., Monthly Salary, Freelance Payment"
-                  placeholderTextColor="#9ca3af"
-                  editable={!loading}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white text-gray-900"
-                />
-              </View>
-
               {/* Top Up Button */}
               <TouchableOpacity
                 onPress={handleTopUp}
@@ -230,12 +392,12 @@ const topup = () => {
                 {loading ? (
                   <>
                     <ActivityIndicator size="small" color="#ffffff" />
-                    <Text className="text-white font-semibold">Topping Up...</Text>
+                    <Text className="text-white font-semibold">Processing...</Text>
                   </>
                 ) : (
                   <>
-                    <Plus size={20} color="#fff" />
-                    <Text className="text-white font-semibold">Top Up</Text>
+                    <CreditCard size={20} color="#fff" />
+                    <Text className="text-white font-semibold">Pay with Paystack</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -246,12 +408,33 @@ const topup = () => {
                   <AlertCircle size={20} color="#2563eb" />
                   <View className="flex-1">
                     <Text className="font-semibold text-blue-900 text-sm mb-1">
-                      About Top Up
+                      Secure Payment with Paystack
                     </Text>
                     <Text className="text-xs text-blue-700">
-                      Topping Up will increase your Primary Account balance. You can then allocate 
-                      funds to your digital envelopes using the Transfer feature.
+                      You'll be redirected to Paystack to complete your payment securely. 
+                      After completing payment, click "Yes, Verify Now" when prompted to update your balance.
                     </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Payment Methods */}
+              <View className="mt-4 p-4 bg-white border border-gray-200 rounded-xl mb-6">
+                <Text className="font-semibold text-gray-900 text-sm mb-3">
+                  Accepted Payment Methods
+                </Text>
+                <View className="flex-row flex-wrap gap-2">
+                  <View className="px-3 py-1 bg-gray-100 rounded-lg">
+                    <Text className="text-gray-700 text-xs">Card</Text>
+                  </View>
+                  <View className="px-3 py-1 bg-gray-100 rounded-lg">
+                    <Text className="text-gray-700 text-xs">Bank Transfer</Text>
+                  </View>
+                  <View className="px-3 py-1 bg-gray-100 rounded-lg">
+                    <Text className="text-gray-700 text-xs">USSD</Text>
+                  </View>
+                  <View className="px-3 py-1 bg-gray-100 rounded-lg">
+                    <Text className="text-gray-700 text-xs">Mobile Money</Text>
                   </View>
                 </View>
               </View>
