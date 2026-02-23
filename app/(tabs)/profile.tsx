@@ -249,6 +249,13 @@ const Profile = () => {
               <Text className="text-gray-900 font-medium">Accounts Management</Text>
               <Text className="text-gray-400 text-xl">›</Text>
             </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => router.push('/categories')}
+              className="p-4 flex-row items-center justify-between border-b border-gray-100"
+            >
+              <Text className="text-gray-900 font-medium">Categories Management</Text>
+              <Text className="text-gray-400 text-xl">›</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity className="p-4 flex-row items-center justify-between border-b border-gray-100">
               <Text className="text-gray-900 font-medium">Change Password</Text>
