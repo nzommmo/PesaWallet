@@ -97,7 +97,7 @@ const topup = () => {
       
       // Use fetch instead of axiosInstance because verify endpoint is public (no auth needed)
       const response = await fetch(
-        `http://192.168.0.101:8000/api/top-up/verify/?reference=${reference}`,
+        `http://192.168.0.103:8000/api/top-up/verify/?reference=${reference}`,
         {
           method: 'GET',
           headers: {
