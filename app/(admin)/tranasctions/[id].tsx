@@ -1,12 +1,15 @@
+import { useLocalSearchParams } from 'expo-router'
 import React from 'react'
 import { Text, View } from 'react-native'
 
-const [id] = () => {
+const TransactionDetail = () => {
+  const { id } = useLocalSearchParams()
+
   return (
     <View>
-      <Text>[id]</Text>
+      <Text>Transaction ID: {id}</Text>
     </View>
   )
 }
 
-export default [id]
+export default TransactionDetail

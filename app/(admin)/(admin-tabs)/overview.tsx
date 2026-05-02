@@ -18,7 +18,7 @@ interface OverviewStats {
   total_transactions: number;
   total_success_volume: number;
   last_24hr_volume: number;
-  payment_breakdown: { method: string; count: number; volume: number }[];
+  // payment_breakdown: { status: string; count: number; volume: number }[];
 }
 
 export default function Overview() {
@@ -155,38 +155,7 @@ export default function Overview() {
                 </Text>
               </View>
 
-              {/* Payment Breakdown */}
-              {stats?.payment_breakdown && stats.payment_breakdown.length > 0 ? (
-                <View className="bg-white rounded-2xl border border-gray-100 p-4">
-                  <Text className="text-gray-900 font-semibold mb-3">
-                    Payment Breakdown
-                  </Text>
-                  {stats.payment_breakdown.map((item, index) => (
-                    <View
-                      key={index}
-                      className="flex-row items-center justify-between py-2 border-b border-gray-50"
-                    >
-                      <Text className="text-gray-700 font-medium capitalize">
-                        {item.method}
-                      </Text>
-                      <View className="items-end">
-                        <Text className="text-gray-900 font-semibold">
-                          KES {item.volume?.toLocaleString()}
-                        </Text>
-                        <Text className="text-gray-400 text-xs">
-                          {item.count} transactions
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <View className="bg-white rounded-2xl border border-gray-100 p-5 items-center">
-                  <Text className="text-2xl mb-2">📊</Text>
-                  <Text className="text-gray-500 text-sm">No payment data yet</Text>
-                </View>
-              )}
-
+              
             </View>
           )}
         </View>

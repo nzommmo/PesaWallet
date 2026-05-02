@@ -21,7 +21,7 @@ interface AdminUser {
   is_active: boolean;
 }
 
-export default function Users() {
+export default function Settings() {
   const [users, setUsers]       = useState<AdminUser[]>([]);
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);

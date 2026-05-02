@@ -35,9 +35,7 @@ const topup = () => {
 
     // Check if app was opened with a deep link
     Linking.getInitialURL().then((url) => {
-      if (url) {
-        handleDeepLink({ url });
-      }
+      if (url) handleDeepLink({ url });
     });
 
     return () => subscription.remove();
@@ -45,24 +43,20 @@ const topup = () => {
 
   const handleDeepLink = ({ url }) => {
     console.log('Deep link received:', url);
-
-    // Parse the URL: pesawallet://payment/verify?reference=xxx
     try {
       const urlParts = url.split('?');
       const queryString = urlParts[1];
-      
       if (queryString) {
         const params = new URLSearchParams(queryString);
         const reference = params.get('reference');
-        
         if (reference) {
           console.log('Reference found from deep link:', reference);
-          setPendingReference(null); // Clear pending reference
+          setPendingReference(null);
           verifyPayment(reference);
         }
       }
-    } catch (error) {
-      console.error('Error parsing deep link:', error);
+    } catch (err) {
+      console.error('Error parsing deep link:', err);
     }
   };
 
@@ -71,7 +65,6 @@ const topup = () => {
     try {
       const response = await axiosInstance.get('/accounts/');
       const primary = response.find(acc => acc.account_type === 'PRIMARY');
-      
       if (primary) {
         setPrimaryAccount({
           ...primary,
@@ -91,31 +84,22 @@ const topup = () => {
   const verifyPayment = async (reference) => {
     setVerifying(true);
     setError('');
-    
+
     try {
       console.log('Verifying payment with reference:', reference);
-      
-      // Use fetch instead of axiosInstance because verify endpoint is public (no auth needed)
-      const response = await fetch(
-        `http://192.168.0.103:8000/api/top-up/verify/?reference=${reference}`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
 
-      const data = await response.json();
+      // ✅ Use axiosInstance — correct base URL, no hardcoded IP
+      const data = await axiosInstance.get(`/top-up/verify/?reference=${reference}`);
+
       console.log('Verification response:', data);
 
       if (data.status === 'success' || data.status === 'already_processed') {
         setSuccess(true);
         setPendingReference(null);
-        
-        // Refresh balance immediately
+
+        // Refresh balance
         await fetchPrimaryAccount();
-        
+
         Alert.alert(
           'Success!',
           `Payment verified! Your account has been topped up with KES ${data.amount}.`,
@@ -135,7 +119,8 @@ const topup = () => {
       }
     } catch (err) {
       console.error('Verification error:', err);
-      setError('Failed to verify payment. Please contact support if you were charged.');
+      const errorMessage = err.error || err.message || 'Failed to verify payment. Please contact support if you were charged.';
+      setError(errorMessage);
       Alert.alert('Error', 'Failed to verify payment. Please contact support if you were charged.');
     } finally {
       setVerifying(false);
@@ -165,28 +150,25 @@ const topup = () => {
 
     try {
       console.log('Initiating top-up with amount:', amount);
-      
+
       const data = await axiosInstance.post('/top-up/', {
         amount: parseFloat(amount),
-        platform: 'mobile' // Specify mobile platform
+        platform: 'mobile'
       });
 
       console.log('Top-up response:', data);
 
-      // Check if we got the authorization URL from Paystack
       if (data && data.authorization_url) {
         console.log('Opening Paystack:', data.authorization_url);
         console.log('Payment reference:', data.reference);
-        
-        // Store the reference for manual verification
+
         setPendingReference(data.reference);
-        
+
         // Open Paystack in browser
         const result = await WebBrowser.openBrowserAsync(data.authorization_url);
-        
         console.log('Browser closed with type:', result.type);
-        
-        // When browser closes, ask user if they completed payment
+
+        // Ask user if they completed payment
         setTimeout(() => {
           Alert.alert(
             'Payment Status',
@@ -195,9 +177,7 @@ const topup = () => {
               {
                 text: 'No, Cancel',
                 style: 'cancel',
-                onPress: () => {
-                  setPendingReference(null);
-                }
+                onPress: () => setPendingReference(null),
               },
               {
                 text: 'Yes, Verify Now',
@@ -206,23 +186,18 @@ const topup = () => {
                     console.log('User confirmed payment, verifying:', data.reference);
                     verifyPayment(data.reference);
                   }
-                }
-              }
+                },
+              },
             ]
           );
-        }, 500); // Small delay to ensure browser is fully closed
-        
+        }, 500);
       } else {
         console.error('No authorization_url in response:', data);
         setError('Failed to initialize payment. Please try again.');
       }
     } catch (err) {
       console.error('Top up error:', err);
-      
-      const errorMessage = err.error || 
-                          err.message || 
-                          'Failed to initialize payment. Please try again.';
-      
+      const errorMessage = err.error || err.message || 'Failed to initialize payment. Please try again.';
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -246,7 +221,7 @@ const topup = () => {
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
+
       {/* Header */}
       <View className="bg-white border-b border-gray-200 px-6 py-4">
         <View className="flex-row items-center gap-4">
@@ -263,15 +238,14 @@ const topup = () => {
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <View className="px-6 py-6">
+
           {/* Pending Payment Notice */}
           {pendingReference && (
             <View className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
               <View className="flex-row items-start gap-3 mb-3">
                 <AlertCircle size={20} color="#f59e0b" />
                 <View className="flex-1">
-                  <Text className="text-sm text-yellow-800 font-medium">
-                    Pending Payment
-                  </Text>
+                  <Text className="text-sm text-yellow-800 font-medium">Pending Payment</Text>
                   <Text className="text-xs text-yellow-700 mt-1">
                     You have a pending payment. Tap below to verify and update your balance.
                   </Text>
@@ -299,12 +273,8 @@ const topup = () => {
             <View className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex-row items-start gap-3">
               <CheckCircle size={20} color="#16a34a" />
               <View className="flex-1">
-                <Text className="text-sm text-green-800 font-medium">
-                  Payment verified successfully!
-                </Text>
-                <Text className="text-xs text-green-700 mt-1">
-                  Your account has been topped up
-                </Text>
+                <Text className="text-sm text-green-800 font-medium">Payment verified successfully!</Text>
+                <Text className="text-xs text-green-700 mt-1">Your account has been topped up</Text>
               </View>
             </View>
           )}
@@ -333,9 +303,7 @@ const topup = () => {
 
               {/* Amount Input */}
               <View className="mb-6">
-                <Text className="text-sm font-medium text-gray-700 mb-2">
-                  Amount (KES)
-                </Text>
+                <Text className="text-sm font-medium text-gray-700 mb-2">Amount (KES)</Text>
                 <TextInput
                   value={amount}
                   onChangeText={(text) => {
@@ -360,9 +328,7 @@ const topup = () => {
 
               {/* Quick Amount Buttons */}
               <View className="mb-6">
-                <Text className="text-sm font-medium text-gray-700 mb-3">
-                  Quick Amounts
-                </Text>
+                <Text className="text-sm font-medium text-gray-700 mb-3">Quick Amounts</Text>
                 <View className="flex-row flex-wrap gap-3">
                   {quickAmounts.map((quickAmount) => (
                     <TouchableOpacity
@@ -384,9 +350,7 @@ const topup = () => {
                 onPress={handleTopUp}
                 disabled={loading || !amount || parseFloat(amount) <= 0}
                 className={`w-full py-4 rounded-xl flex-row items-center justify-center gap-2 ${
-                  loading || !amount || parseFloat(amount) <= 0
-                    ? 'bg-gray-300'
-                    : 'bg-green-600'
+                  loading || !amount || parseFloat(amount) <= 0 ? 'bg-gray-300' : 'bg-green-600'
                 }`}
               >
                 {loading ? (
@@ -411,33 +375,14 @@ const topup = () => {
                       Secure Payment with Paystack
                     </Text>
                     <Text className="text-xs text-blue-700">
-                      You'll be redirected to Paystack to complete your payment securely. 
+                      You'll be redirected to Paystack to complete your payment securely.
                       After completing payment, click "Yes, Verify Now" when prompted to update your balance.
                     </Text>
                   </View>
                 </View>
               </View>
 
-              {/* Payment Methods */}
-              <View className="mt-4 p-4 bg-white border border-gray-200 rounded-xl mb-6">
-                <Text className="font-semibold text-gray-900 text-sm mb-3">
-                  Accepted Payment Methods
-                </Text>
-                <View className="flex-row flex-wrap gap-2">
-                  <View className="px-3 py-1 bg-gray-100 rounded-lg">
-                    <Text className="text-gray-700 text-xs">Card</Text>
-                  </View>
-                  <View className="px-3 py-1 bg-gray-100 rounded-lg">
-                    <Text className="text-gray-700 text-xs">Bank Transfer</Text>
-                  </View>
-                  <View className="px-3 py-1 bg-gray-100 rounded-lg">
-                    <Text className="text-gray-700 text-xs">USSD</Text>
-                  </View>
-                  <View className="px-3 py-1 bg-gray-100 rounded-lg">
-                    <Text className="text-gray-700 text-xs">Mobile Money</Text>
-                  </View>
-                </View>
-              </View>
+              
             </>
           )}
 

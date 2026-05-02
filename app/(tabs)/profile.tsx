@@ -1,13 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
-  Switch,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axiosInstance from '../../axiosinstance';
@@ -24,8 +24,14 @@ const Profile = () => {
   const [user, setUser] = useState<User | null>(null);
   const [incomeStats, setIncomeStats] = useState({ count: 0, total: 0 });
   const [loadingIncome, setLoadingIncome] = useState(true);
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [emailNotifications, setEmailNotifications] = useState(false);
+
+  // FIX: Track mount state to prevent setState calls after unmount
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     loadUserData();
@@ -35,314 +41,323 @@ const Profile = () => {
   const loadUserData = async () => {
     try {
       const userData = await AsyncStorage.getItem('user');
-      if (userData) {
-        const parsedUser: User = JSON.parse(userData);
-        setUser(parsedUser);
-        console.log('is_superadmin:', parsedUser.is_superadmin);
-      }
+      // FIX: Guard setState after unmount
+      if (!mountedRef.current) return;
+      if (userData) setUser(JSON.parse(userData));
     } catch (error) {
       console.error('Failed to load user data:', error);
     }
   };
 
   const fetchIncomeStats = async () => {
+    if (!mountedRef.current) return;
     setLoadingIncome(true);
     try {
       const response = await axiosInstance.get('/incomes/');
-      const incomes = response || [];
-      const total = incomes.reduce(
-        (sum: number, income: { amount?: string }) =>
-          sum + parseFloat(income.amount || '0'),
+
+      // FIX: Safely unwrap — axiosInstance may or may not auto-unwrap .data
+      const rawIncomes = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.data)
+        ? response.data
+        : [];
+
+      const total = rawIncomes.reduce(
+        (sum: number, income: { amount?: string }) => {
+          const parsed = parseFloat(income.amount || '0');
+          // FIX: Guard against NaN from malformed amount strings
+          return sum + (isNaN(parsed) ? 0 : parsed);
+        },
         0
       );
-      setIncomeStats({ count: incomes.length, total });
+
+      if (!mountedRef.current) return;
+      setIncomeStats({ count: rawIncomes.length, total });
     } catch (err) {
       console.error('Failed to fetch income stats:', err);
+      // FIX: Was silently swallowing all errors — at least log them
     } finally {
-      setLoadingIncome(false);
+      if (mountedRef.current) {
+        setLoadingIncome(false);
+      }
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await AsyncStorage.removeItem('Access_Token');
-      await AsyncStorage.removeItem('Refresh_Token');
-      await AsyncStorage.removeItem('user');
-      router.replace('/(auth)/SignIn');
-    } catch (error) {
-      console.error('Logout failed:', error);
-    }
+  const handleLogout = () => {
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log Out',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await AsyncStorage.multiRemove(['Access_Token', 'Refresh_Token', 'user']);
+          } catch (err) {
+            // FIX: Wrap in try/catch — a storage failure shouldn't block the logout nav
+            console.warn('Failed to clear storage on logout:', err);
+          }
+          router.replace('/(auth)/SignIn');
+        },
+      },
+    ]);
   };
 
   const getInitials = () => {
     if (!user?.full_name) return 'JD';
+    // FIX: Guard against empty name segments producing undefined[0]
     return user.full_name
       .split(' ')
+      .filter(Boolean)
       .map((n) => n[0])
       .join('')
-      .toUpperCase();
+      .toUpperCase()
+      .slice(0, 2);
   };
+
+  const displayName = user?.full_name || 'John Doe';
+  const displayEmail = user?.email || 'john.doe@email.com';
+  const displayPhone = user?.phone_number || '+254 700 000 000';
+  const displayMpesa = user?.default_mpesa_number || displayPhone;
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
 
-        {/* Header Section */}
+        {/* ── Hero Header ── */}
         <View className="bg-blue-600 rounded-b-3xl pb-8">
-          <View className="px-6 pt-6 pb-4">
-            <View className="flex-row items-center gap-4 mb-8">
-              <TouchableOpacity
-                onPress={() => router.back()}
-                className="p-2 rounded-lg"
-              >
-                <Text className="text-white text-2xl">←</Text>
-              </TouchableOpacity>
-              <Text className="text-white text-xl font-semibold">Profile</Text>
+          {/* Top nav */}
+          <View className="flex-row items-center justify-between px-6 pt-5 mb-6">
+            <TouchableOpacity
+              onPress={() => router.back()}
+              className="w-10 h-10 bg-white/20 rounded-full items-center justify-center"
+            >
+              <Text className="text-white text-lg">←</Text>
+            </TouchableOpacity>
 
-              {user?.is_superadmin && (
-                <View className="ml-auto bg-red-500 px-3 py-1 rounded-full">
-                  <Text className="text-white text-xs font-bold">SUPERADMIN</Text>
-                </View>
-              )}
-            </View>
+            <Text className="text-white/80 text-xs tracking-widest uppercase font-medium">
+              Your Profile
+            </Text>
 
-            {/* Avatar and Info */}
-            <View className="items-center">
-              <View className="w-24 h-24 bg-blue-500 rounded-full items-center justify-center mb-4">
-                <Text className="text-white font-bold text-3xl">
-                  {getInitials()}
-                </Text>
+            {user?.is_superadmin ? (
+              <View className="bg-red-500 px-3 py-1 rounded-full">
+                <Text className="text-white text-xs font-bold tracking-wide">ADMIN</Text>
               </View>
-              <Text className="text-white text-2xl font-bold mb-1">
-                {user?.full_name || 'John Doe'}
+            ) : (
+              <View className="w-16" />
+            )}
+          </View>
+
+          {/* Avatar + identity */}
+          <View className="items-center px-6">
+            <View className="w-24 h-24 bg-blue-500 rounded-full items-center justify-center mb-4 border-4 border-white/30">
+              <Text className="text-white font-black text-3xl">
+                {getInitials()}
               </Text>
-              <Text className="text-blue-100 text-sm">
-                {user?.email || 'john.doe@email.com'}
-              </Text>
-              {user?.is_superadmin && (
-                <View className="mt-2 bg-red-500/30 px-4 py-1 rounded-full">
-                  <Text className="text-white text-xs">System Administrator</Text>
-                </View>
-              )}
             </View>
+            <Text className="text-white text-2xl font-bold mb-1">{displayName}</Text>
+            <Text className="text-blue-100 text-sm">{displayEmail}</Text>
+
+            {user?.is_superadmin && (
+              <View className="mt-3 flex-row items-center gap-1.5 bg-red-500/30 border border-red-400/40 px-4 py-1.5 rounded-full">
+                <Text className="text-white text-xs">🛡️</Text>
+                <Text className="text-white text-xs font-medium">System Administrator</Text>
+              </View>
+            )}
           </View>
         </View>
 
-        {/* Personal Information */}
-        <View className="px-6 mt-6">
-          <View className="bg-white rounded-2xl border border-gray-100 p-5">
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="font-semibold text-gray-900 text-lg">
-                Personal Information
-              </Text>
-              <TouchableOpacity className="flex-row items-center gap-1">
-                <Text className="text-blue-600 text-sm font-medium">✏️ Edit</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View className="gap-4">
-              <View className="flex-row items-start gap-3">
-                <View className="w-10 h-10 bg-gray-100 rounded-lg items-center justify-center">
-                  <Text className="text-gray-600 text-lg">👤</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-xs text-gray-500 mb-1">Full Name</Text>
-                  <Text className="text-gray-900 font-medium">
-                    {user?.full_name || 'John Doe'}
-                  </Text>
-                </View>
-              </View>
-
-              <View className="flex-row items-start gap-3">
-                <View className="w-10 h-10 bg-gray-100 rounded-lg items-center justify-center">
-                  <Text className="text-gray-600 text-lg">✉️</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-xs text-gray-500 mb-1">Email</Text>
-                  <Text className="text-gray-900 font-medium">
-                    {user?.email || 'john.doe@email.com'}
-                  </Text>
-                </View>
-              </View>
-
-              <View className="flex-row items-start gap-3">
-                <View className="w-10 h-10 bg-gray-100 rounded-lg items-center justify-center">
-                  <Text className="text-gray-600 text-lg">📞</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-xs text-gray-500 mb-1">Phone Number</Text>
-                  <Text className="text-gray-900 font-medium">
-                    {user?.phone_number || '+254 700 000 000'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* M-Pesa Settings */}
-        <View className="px-6 mt-6">
-          <Text className="font-semibold text-gray-900 text-lg mb-4">
-            M-Pesa Settings
-          </Text>
-          <TouchableOpacity className="bg-green-50 border border-green-200 rounded-2xl p-4 flex-row items-center justify-between">
-            <View className="flex-row items-center gap-3 flex-1">
-              <View className="w-10 h-10 bg-green-100 rounded-lg items-center justify-center">
-                <Text className="text-green-600 text-lg">📱</Text>
-              </View>
-              <View className="flex-1">
-                <Text className="text-sm font-semibold text-gray-900">
-                  Default M-Pesa Number
-                </Text>
-                <Text className="text-xs text-gray-600">
-                  {user?.default_mpesa_number || user?.phone_number || '+254 700 000 000'}
-                </Text>
-              </View>
-            </View>
-            <Text className="text-gray-400 text-xl">›</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Income Stats */}
-        <View className="px-6 mt-4 mb-6">
-          <Text className="font-semibold text-gray-900 text-lg mb-4">
-            Income Management
-          </Text>
+        {/* ── Income Stat Card ── */}
+        <View className="px-6 mt-5">
           <TouchableOpacity
             onPress={() => router.push('/income/income')}
-            className="bg-blue-200 rounded-2xl p-5"
+            className="bg-blue-600 rounded-2xl p-5"
           >
             <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-4 flex-1">
-                <View className="w-14 h-14 bg-white/20 rounded-xl items-center justify-center">
-                  <Text className="text-2xl">📈</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-gray-700 text-sm mb-1">Income Sources</Text>
-                  {loadingIncome ? (
-                    <ActivityIndicator size="small" color="#4b5563" />
-                  ) : (
-                    <>
-                      <Text className="text-gray-900 text-xl font-semibold">
-                        {incomeStats.count}{' '}
-                        {incomeStats.count === 1 ? 'Source' : 'Sources'}
-                      </Text>
-                      <Text className="text-gray-900 text-base mt-1">
-                        Total: KES {incomeStats.total.toLocaleString()}
-                      </Text>
-                    </>
-                  )}
-                </View>
+              <View>
+                <Text className="text-blue-100 text-xs uppercase tracking-widest mb-1">
+                  Monthly Income
+                </Text>
+                {loadingIncome ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text className="text-white text-2xl font-bold">
+                    KES {incomeStats.total.toLocaleString()}
+                  </Text>
+                )}
               </View>
-              <Text className="text-white/80 text-xl">›</Text>
+              <View className="items-end gap-2">
+                <View className="bg-white/20 px-3 py-1 rounded-full">
+                  <Text className="text-white text-xs font-semibold">
+                    {loadingIncome ? '–' : incomeStats.count}{' '}
+                    source{incomeStats.count !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+                <Text className="text-blue-200 text-xs">View all →</Text>
+              </View>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* Notification Preferences */}
+        {/* ── Contact Details ── */}
         <View className="px-6 mt-6">
-          <Text className="font-semibold text-gray-900 text-lg mb-4">
-            Notification Preferences
-          </Text>
-          <View className="bg-white rounded-2xl border border-gray-100">
-            <View className="p-4 flex-row items-center justify-between border-b border-gray-100">
-              <View className="flex-row items-center gap-3">
-                <Text className="text-gray-600 text-lg">🔔</Text>
-                <Text className="text-gray-900 font-medium">Push Notifications</Text>
-              </View>
-              <Switch
-                value={pushNotifications}
-                onValueChange={setPushNotifications}
-                trackColor={{ false: '#d1d5db', true: '#2563eb' }}
-                thumbColor="#ffffff"
-              />
-            </View>
-            <View className="p-4 flex-row items-center justify-between">
-              <View className="flex-row items-center gap-3">
-                <Text className="text-gray-600 text-lg">✉️</Text>
-                <Text className="text-gray-900 font-medium">Email Notifications</Text>
-              </View>
-              <Switch
-                value={emailNotifications}
-                onValueChange={setEmailNotifications}
-                trackColor={{ false: '#d1d5db', true: '#2563eb' }}
-                thumbColor="#ffffff"
-              />
-            </View>
+          <SectionLabel label="Contact Details" />
+          <View className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+            <InfoRow icon="👤" label="Full Name" value={displayName} />
+            <Divider />
+            <InfoRow icon="✉️" label="Email Address" value={displayEmail} />
+            <Divider />
+            <InfoRow icon="📞" label="Phone Number" value={displayPhone} />
           </View>
         </View>
 
-        {/* Account Actions */}
-        <View className="px-6 mt-6 mb-10">
-          <View className="bg-white rounded-2xl border border-gray-100">
-            <TouchableOpacity
-              onPress={() => router.push('/accountmanagement')}
-              className="p-4 flex-row items-center justify-between border-b border-gray-100"
-            >
+        {/* ── M-Pesa ── */}
+        <View className="px-6 mt-5">
+          <SectionLabel label="M-Pesa" />
+          <TouchableOpacity className="bg-green-50 border border-green-200 rounded-2xl p-4">
+            <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-3">
-                <Text className="text-lg">🏦</Text>
-                <Text className="text-gray-900 font-medium">Accounts Management</Text>
-              </View>
-              <Text className="text-gray-400 text-xl">›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => router.push('/categories')}
-              className="p-4 flex-row items-center justify-between border-b border-gray-100"
-            >
-              <View className="flex-row items-center gap-3">
-                <Text className="text-lg">🗂️</Text>
-                <Text className="text-gray-900 font-medium">Categories Management</Text>
-              </View>
-              <Text className="text-gray-400 text-xl">›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity className="p-4 flex-row items-center justify-between border-b border-gray-100">
-              <View className="flex-row items-center gap-3">
-                <Text className="text-lg">🔒</Text>
-                <Text className="text-gray-900 font-medium">Change Password</Text>
-              </View>
-              <Text className="text-gray-400 text-xl">›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity className="p-4 flex-row items-center justify-between border-b border-gray-100">
-              <View className="flex-row items-center gap-3">
-                <Text className="text-lg">💬</Text>
-                <Text className="text-gray-900 font-medium">Help & Support</Text>
-              </View>
-              <Text className="text-gray-400 text-xl">›</Text>
-            </TouchableOpacity>
-
-            {/* Admin Dashboard — superadmin only */}
-            {user?.is_superadmin && (
-              <TouchableOpacity
-                onPress={() => router.replace('/(admin)/(admin-tabs)/overview')}
-                className="p-4 flex-row items-center justify-between border-b border-gray-100 bg-red-50"
-              >
-                <View className="flex-row items-center gap-3">
-                  <Text className="text-lg">🛡️</Text>
-                  <View>
-                    <Text className="text-red-600 font-semibold">Admin Dashboard</Text>
-                    <Text className="text-xs text-red-400">Switch to system management</Text>
-                  </View>
+                <View className="w-10 h-10 bg-green-100 rounded-xl items-center justify-center">
+                  <Text className="text-lg">📱</Text>
                 </View>
-                <Text className="text-red-400 text-xl">›</Text>
-              </TouchableOpacity>
-            )}
+                <View>
+                  <Text className="text-green-700 text-xs font-medium mb-0.5">Default Number</Text>
+                  <Text className="text-gray-900 font-semibold">{displayMpesa}</Text>
+                </View>
+              </View>
+              <View className="bg-green-100 border border-green-200 px-2.5 py-1 rounded-lg">
+                <Text className="text-green-700 text-xs font-medium">Active</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>
 
-            <TouchableOpacity
-              onPress={handleLogout}
-              className="p-4 flex-row items-center gap-3"
-            >
-              <Text className="text-red-600 text-lg">🚪</Text>
-              <Text className="text-red-600 font-medium">Logout</Text>
-            </TouchableOpacity>
+        {/* ── Manage ── */}
+        <View className="px-6 mt-5">
+          <SectionLabel label="Manage" />
+          <View className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+            <ActionRow
+              icon="🏦"
+              label="Accounts"
+              sublabel="View & manage envelopes"
+              onPress={() => router.push('/accountmanagement')}
+            />
+            <Divider />
+            <ActionRow
+              icon="🗂️"
+              label="Categories"
+              sublabel="Organise spending categories"
+              onPress={() => router.push('/categories')}
+            />
+            <Divider />
+            <ActionRow
+              icon="🔒"
+              label="Change Password"
+              sublabel="Update your security credentials"
+              onPress={() => {}}
+            />
+
+            {user?.is_superadmin && (
+              <>
+                <Divider />
+                <TouchableOpacity
+                  onPress={() => router.replace('/(admin)/(admin-tabs)/overview')}
+                  className="flex-row items-center justify-between px-4 py-3.5 bg-red-50"
+                >
+                  <View className="flex-row items-center gap-3">
+                    <View className="w-9 h-9 bg-red-100 rounded-xl items-center justify-center">
+                      <Text>🛡️</Text>
+                    </View>
+                    <View>
+                      <Text className="text-red-600 font-semibold text-sm">Admin Dashboard</Text>
+                      <Text className="text-red-400 text-xs">Switch to system management</Text>
+                    </View>
+                  </View>
+                  <Text className="text-red-400 text-lg">›</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
+        </View>
+
+        {/* ── Logout ── */}
+        <View className="px-6 mt-5 mb-12">
+          <TouchableOpacity
+            onPress={handleLogout}
+            className="bg-red-50 border border-red-200 rounded-2xl p-4"
+          >
+            <View className="flex-row items-center justify-center gap-2">
+              <Text className="text-lg">🚪</Text>
+              <Text className="text-red-600 font-semibold text-base">Log Out</Text>
+            </View>
+          </TouchableOpacity>
+          <Text className="text-gray-400 text-xs text-center mt-3">
+            You'll be asked to confirm before logging out
+          </Text>
         </View>
 
       </ScrollView>
     </SafeAreaView>
   );
 };
+
+/* ── Reusable sub-components ── */
+
+const SectionLabel = ({ label }: { label: string }) => (
+  <Text className="text-gray-500 text-xs uppercase tracking-widest mb-3 ml-1">
+    {label}
+  </Text>
+);
+
+const Divider = () => (
+  <View className="h-px bg-gray-100 mx-4" />
+);
+
+const InfoRow = ({
+  icon,
+  label,
+  value,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+}) => (
+  <View className="flex-row items-center gap-3 px-4 py-3.5">
+    <View className="w-9 h-9 bg-gray-100 rounded-xl items-center justify-center">
+      <Text>{icon}</Text>
+    </View>
+    <View className="flex-1">
+      <Text className="text-gray-500 text-xs mb-0.5">{label}</Text>
+      <Text className="text-gray-900 font-medium text-sm">{value}</Text>
+    </View>
+  </View>
+);
+
+const ActionRow = ({
+  icon,
+  label,
+  sublabel,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  sublabel: string;
+  onPress: () => void;
+}) => (
+  <TouchableOpacity
+    onPress={onPress}
+    className="flex-row items-center justify-between px-4 py-3.5"
+  >
+    <View className="flex-row items-center gap-3">
+      <View className="w-9 h-9 bg-gray-100 rounded-xl items-center justify-center">
+        <Text>{icon}</Text>
+      </View>
+      <View>
+        <Text className="text-gray-900 font-medium text-sm">{label}</Text>
+        <Text className="text-gray-500 text-xs">{sublabel}</Text>
+      </View>
+    </View>
+    <Text className="text-gray-400 text-lg">›</Text>
+  </TouchableOpacity>
+);
 
 export default Profile;

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -11,15 +11,33 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axiosInstance from '../axiosinstance';
 
+interface Account {
+  id: number;
+  account_name: string;
+  account_type: string;
+  balance: string | number;
+  category?: string;
+  overspend_rule?: string;
+  rollover_rule?: string;
+}
+
 const AccountManagement = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [accounts, setAccounts] = useState([]);
-  const [filteredAccounts, setFilteredAccounts] = useState([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [filteredAccounts, setFilteredAccounts] = useState<Account[]>([]);
   const [selectedFilter, setSelectedFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [showBalances, setShowBalances] = useState(true);
-  const [categories, setCategories] = useState([]);
+  const [categories, setCategories] = useState<string[]>([]);
+
+  // FIX: Track mount state to prevent setState calls after unmount
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -30,27 +48,39 @@ const AccountManagement = () => {
   }, [selectedFilter, searchQuery, accounts]);
 
   const fetchData = async () => {
+    if (!mountedRef.current) return;
     setLoading(true);
     setError('');
     try {
-      const accountsResponse = await axiosInstance.get('/accounts/');
-      const accountsData = Array.isArray(accountsResponse) ? accountsResponse : [];
-      
+      const response = await axiosInstance.get('/accounts/');
+
+      // FIX: Safely unwrap — axiosInstance may or may not auto-unwrap .data
+      const raw = response?.data ?? response;
+      const accountsData: Account[] = Array.isArray(raw) ? raw : [];
+
+      if (!mountedRef.current) return;
       setAccounts(accountsData);
-      
-      const uniqueCategories = [...new Set(
-        accountsData
-          .filter(acc => acc.category)
-          .map(acc => acc.category)
-      )];
-      
+
+      // FIX: Guard against accounts with missing/null account_name before filtering
+      const uniqueCategories = [
+        ...new Set(
+          accountsData
+            .filter((acc) => acc.category && typeof acc.category === 'string')
+            .map((acc) => acc.category as string)
+        ),
+      ];
+
       setCategories(uniqueCategories);
-      
+
     } catch (err) {
       console.error('Failed to fetch accounts:', err);
-      setError('Failed to load accounts. Please try again.');
+      if (mountedRef.current) {
+        setError('Failed to load accounts. Please try again.');
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -58,52 +88,66 @@ const AccountManagement = () => {
     let filtered = [...accounts];
 
     if (selectedFilter === 'PRIMARY') {
-      filtered = filtered.filter(acc => acc.account_type === 'PRIMARY');
+      filtered = filtered.filter((acc) => acc.account_type === 'PRIMARY');
     } else if (selectedFilter === 'DIGITAL') {
-      filtered = filtered.filter(acc => acc.account_type === 'DIGITAL');
+      filtered = filtered.filter((acc) => acc.account_type === 'DIGITAL');
     } else if (selectedFilter !== 'ALL') {
-      filtered = filtered.filter(acc => acc.category === selectedFilter);
+      filtered = filtered.filter((acc) => acc.category === selectedFilter);
     }
 
     if (searchQuery.trim()) {
-      filtered = filtered.filter(acc =>
-        acc.account_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (acc.category && acc.category.toLowerCase().includes(searchQuery.toLowerCase()))
-      );
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((acc) => {
+        // FIX: Guard against null/undefined account_name before calling .toLowerCase()
+        const nameMatch = acc.account_name
+          ? acc.account_name.toLowerCase().includes(q)
+          : false;
+        const categoryMatch = acc.category
+          ? acc.category.toLowerCase().includes(q)
+          : false;
+        return nameMatch || categoryMatch;
+      });
     }
 
     setFilteredAccounts(filtered);
   };
 
-  const getAccountColor = (accountType, category) => {
+  const getAccountColor = (accountType: string, category?: string) => {
     if (accountType === 'PRIMARY') {
       return { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' };
     }
-    
-    const categoryColors = {
-      'Food': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
-      'Transport': { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-200' },
-      'Housing': { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200' },
-      'Entertainment': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
-      'Healthcare': { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
-      'Education': { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
-      'Savings': { bg: 'bg-teal-100', text: 'text-teal-700', border: 'border-teal-200' },
-      'Uncategorized': { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' },
-      'Other': { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200' }
+
+    const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
+      Food:          { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
+      Transport:     { bg: 'bg-cyan-100',    text: 'text-cyan-700',    border: 'border-cyan-200' },
+      Housing:       { bg: 'bg-purple-100',  text: 'text-purple-700',  border: 'border-purple-200' },
+      Entertainment: { bg: 'bg-amber-100',   text: 'text-amber-700',   border: 'border-amber-200' },
+      Healthcare:    { bg: 'bg-red-100',     text: 'text-red-700',     border: 'border-red-200' },
+      Education:     { bg: 'bg-indigo-100',  text: 'text-indigo-700',  border: 'border-indigo-200' },
+      Savings:       { bg: 'bg-teal-100',    text: 'text-teal-700',    border: 'border-teal-200' },
+      Uncategorized: { bg: 'bg-slate-100',   text: 'text-slate-700',   border: 'border-slate-200' },
+      Other:         { bg: 'bg-gray-100',    text: 'text-gray-700',    border: 'border-gray-200' },
     };
-    
-    return categoryColors[category] || { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200' };
+
+    return (
+      (category && categoryColors[category]) ||
+      { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200' }
+    );
   };
 
   const getTotalBalance = () => {
-    return filteredAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
+    return filteredAccounts.reduce((sum, acc) => {
+      // FIX: Guard against NaN from missing or malformed balance values
+      const parsed = parseFloat(String(acc.balance ?? '0'));
+      return sum + (isNaN(parsed) ? 0 : parsed);
+    }, 0);
   };
 
   const filterOptions = [
-    { value: 'ALL', label: 'All Accounts', icon: '💳' },
-    { value: 'PRIMARY', label: 'Primary', icon: '👛' },
-    { value: 'DIGITAL', label: 'Digital', icon: '💳' },
-    ...categories.map(cat => ({ value: cat, label: cat, icon: '🏷️' }))
+    { value: 'ALL',     label: 'All Accounts', icon: '💳' },
+    { value: 'PRIMARY', label: 'Primary',       icon: '👛' },
+    { value: 'DIGITAL', label: 'Digital',       icon: '💳' },
+    ...categories.map((cat) => ({ value: cat, label: cat, icon: '🏷️' })),
   ];
 
   return (
@@ -111,10 +155,7 @@ const AccountManagement = () => {
       {/* Header */}
       <View className="bg-white border-b border-gray-200 px-6 py-4">
         <View className="flex-row items-center gap-4 mb-4">
-          <TouchableOpacity
-            onPress={() => router.back()}
-            className="p-2 rounded-lg"
-          >
+          <TouchableOpacity onPress={() => router.back()} className="p-2 rounded-lg">
             <Text className="text-gray-700 text-2xl">←</Text>
           </TouchableOpacity>
           <View className="flex-1">
@@ -153,9 +194,7 @@ const AccountManagement = () => {
                 key={option.value}
                 onPress={() => setSelectedFilter(option.value)}
                 className={`flex-row items-center gap-1.5 px-4 py-2 rounded-full ${
-                  selectedFilter === option.value
-                    ? 'bg-blue-600'
-                    : 'bg-gray-100'
+                  selectedFilter === option.value ? 'bg-blue-600' : 'bg-gray-100'
                 }`}
               >
                 <Text className="text-base">{option.icon}</Text>
@@ -231,6 +270,10 @@ const AccountManagement = () => {
               <View className="gap-3">
                 {filteredAccounts.map((account) => {
                   const colors = getAccountColor(account.account_type, account.category);
+                  // FIX: Guard balance parse at render time too
+                  const balance = parseFloat(String(account.balance ?? '0'));
+                  const displayBalance = isNaN(balance) ? 0 : balance;
+
                   return (
                     <View
                       key={account.id}
@@ -240,16 +283,21 @@ const AccountManagement = () => {
                         <View className="flex-1">
                           <View className="flex-row items-center gap-2 mb-1 flex-wrap">
                             <Text className="font-semibold text-gray-900">
-                              {account.account_name}
+                              {/* FIX: Guard against null account_name */}
+                              {account.account_name ?? '—'}
                             </Text>
                             <View className={`px-2 py-0.5 rounded-full ${colors.bg}`}>
                               <Text className={`text-xs ${colors.text}`}>
-                                {account.account_type === 'PRIMARY' ? 'Primary' : account.category || 'Uncategorized'}
+                                {account.account_type === 'PRIMARY'
+                                  ? 'Primary'
+                                  : account.category || 'Uncategorized'}
                               </Text>
                             </View>
                           </View>
                           <Text className="text-2xl font-bold text-gray-900">
-                            {showBalances ? `KES ${parseFloat(account.balance).toLocaleString()}` : 'KES ••••••'}
+                            {showBalances
+                              ? `KES ${displayBalance.toLocaleString()}`
+                              : 'KES ••••••'}
                           </Text>
                         </View>
                         <View className={`w-12 h-12 ${colors.bg} rounded-xl items-center justify-center`}>
@@ -278,14 +326,24 @@ const AccountManagement = () => {
                       {/* Action Buttons */}
                       <View className="flex-row gap-2">
                         <TouchableOpacity
-                          onPress={() => router.push(`/accounts/${account.id}`)}
+                          onPress={() =>
+                            router.push({
+                              pathname: '/accounts/[id]',
+                              params: { id: account.id },
+                            })
+                          }
                           className="flex-1 bg-blue-50 py-2 rounded-lg items-center"
                         >
                           <Text className="text-blue-600 font-medium text-sm">View Details</Text>
                         </TouchableOpacity>
                         {account.account_type === 'DIGITAL' && (
                           <TouchableOpacity
-                            onPress={() => router.push(`/envelope/edit/${account.id}`)}
+                            onPress={() =>
+                              router.push({
+                                pathname: '/envelopes/edit/[id]',
+                                params: { id: account.id },
+                              })
+                            }
                             className="px-4 bg-gray-100 py-2 rounded-lg items-center"
                           >
                             <Text className="text-xl">✏️</Text>
@@ -299,7 +357,6 @@ const AccountManagement = () => {
             )}
           </View>
 
-          {/* Spacing for FAB */}
           <View className="h-20" />
         </ScrollView>
       )}

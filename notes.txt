@@ -1,0 +1,2 @@
+create a summary for each category
+Be able to edit accounts in a particulat category...when category is deleted the accounts become uncategorized and there is no way to update the category

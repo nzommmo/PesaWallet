@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -21,23 +21,21 @@ const Payments = () => {
   const [success, setSuccess] = useState(false);
 
   // Form State
-  const [paymentType, setPaymentType] = useState('SENDMONEY');
   const [recipientPhone, setRecipientPhone] = useState('');
-  const [businessNumber, setBusinessNumber] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [tillNumber, setTillNumber] = useState('');
   const [amount, setAmount] = useState('');
   const [sourceAccountId, setSourceAccountId] = useState('');
-  
+
   // Data State
-  const [accounts, setAccounts] = useState([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
   const [defaultMpesaNumber, setDefaultMpesaNumber] = useState('');
 
-  const paymentTypes = [
-    { id: 'SENDMONEY', name: 'Send Money', icon: '💸' },
-    { id: 'PAYBILL', name: 'PayBill', icon: '📄' },
-    { id: 'BUYGOOD', name: 'Buy Goods', icon: '🛍️' }
-  ];
+  // FIX: Track mount state to prevent setState / router calls after unmount
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     fetchAccounts();
@@ -47,28 +45,47 @@ const Payments = () => {
     setLoadingAccounts(true);
     try {
       const response = await axiosInstance.get('/accounts/');
-      const accountsWithNumbers = response.map(acc => ({
+
+      // FIX: Safely unwrap — axiosInstance may return response or response.data
+      const rawAccounts = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.data)
+        ? response.data
+        : [];
+
+      const accountsWithNumbers = rawAccounts.map((acc: any) => ({
         ...acc,
         balance: parseFloat(acc.balance) || 0
       }));
+
+      if (!mountedRef.current) return;
       setAccounts(accountsWithNumbers);
-      
+
       // Auto-select the first account
       if (accountsWithNumbers.length > 0) {
         setSourceAccountId(accountsWithNumbers[0].id.toString());
       }
-      
-      // Get user data to fetch default M-Pesa number
-      const userData = await AsyncStorage.getItem('user');
-      if (userData) {
-        const user = JSON.parse(userData);
-        setDefaultMpesaNumber(user.default_mpesa_number || user.phone_number || '');
-      }
     } catch (err) {
       console.error('Failed to fetch accounts:', err);
-      setError('Failed to load accounts. Please try again.');
+      if (mountedRef.current) {
+        setError('Failed to load accounts. Please try again.');
+      }
     } finally {
-      setLoadingAccounts(false);
+      // FIX: Fetch user data separately so an AsyncStorage failure
+      // doesn't prevent accounts from loading
+      try {
+        const userData = await AsyncStorage.getItem('user');
+        if (userData && mountedRef.current) {
+          const user = JSON.parse(userData);
+          setDefaultMpesaNumber(user.default_mpesa_number || user.phone_number || '');
+        }
+      } catch (storageErr) {
+        console.warn('Could not load user data from storage:', storageErr);
+      }
+
+      if (mountedRef.current) {
+        setLoadingAccounts(false);
+      }
     }
   };
 
@@ -82,30 +99,13 @@ const Payments = () => {
       return;
     }
 
-    // Validation based on payment type
-    if (paymentType === 'SENDMONEY') {
-      if (!recipientPhone.trim()) {
-        setError('Please enter recipient phone number');
-        return;
-      }
-      if (!/^(07|01)\d{8}$/.test(recipientPhone.replace(/\s+/g, ''))) {
-        setError('Invalid phone number format (e.g., 0712345678)');
-        return;
-      }
-    } else if (paymentType === 'PAYBILL') {
-      if (!businessNumber.trim()) {
-        setError('Please enter business number');
-        return;
-      }
-      if (!accountNumber.trim()) {
-        setError('Please enter account number');
-        return;
-      }
-    } else if (paymentType === 'BUYGOOD') {
-      if (!tillNumber.trim()) {
-        setError('Please enter till number');
-        return;
-      }
+    if (!recipientPhone.trim()) {
+      setError('Please enter recipient phone number');
+      return;
+    }
+    if (!/^(07|01)\d{8}$/.test(recipientPhone.replace(/\s+/g, ''))) {
+      setError('Invalid phone number format (e.g., 0712345678)');
+      return;
     }
 
     if (!amount || parseFloat(amount) <= 0) {
@@ -113,11 +113,15 @@ const Payments = () => {
       return;
     }
 
-    // Check if sufficient balance
-    const selectedAccount = accounts.find(acc => acc.id === parseInt(sourceAccountId));
+    // FIX: Compare by string to avoid parseInt vs string ID mismatch
+    const selectedAccount = accounts.find(
+      acc => acc.id.toString() === sourceAccountId
+    );
     if (selectedAccount && parseFloat(amount) > selectedAccount.balance) {
       if (selectedAccount.overspend_rule === 'BLOCK') {
-        setError(`Insufficient funds in ${selectedAccount.account_name}. Available: KES ${selectedAccount.balance.toLocaleString()}`);
+        setError(
+          `Insufficient funds in ${selectedAccount.account_name}. Available: KES ${selectedAccount.balance.toLocaleString()}`
+        );
         return;
       }
     }
@@ -125,58 +129,49 @@ const Payments = () => {
     setLoading(true);
 
     try {
-      if (paymentType === 'SENDMONEY') {
-        // Use the transfer endpoint for Send Money
-        await axiosInstance.post('/payments/transfer/', {
-          recipient_phone: recipientPhone.replace(/\s+/g, ''),
-          amount: parseFloat(amount).toFixed(2),
-          source_account_id: parseInt(sourceAccountId)
-        });
-      } else {
-        // Use the existing pay endpoint for PayBill and Buy Goods
-        let paymentData = {
-          payment_type: paymentType,
-          amount: parseFloat(amount)
-        };
+      await axiosInstance.post('/payments/transfer/', {
+        recipient_phone: recipientPhone.replace(/\s+/g, ''),
+        amount: parseFloat(amount).toFixed(2),
+        source_account_id: parseInt(sourceAccountId)
+      });
 
-        if (paymentType === 'PAYBILL') {
-          paymentData.to_number = businessNumber.replace(/\s+/g, '');
-          paymentData.account_number = accountNumber.trim();
-        } else if (paymentType === 'BUYGOOD') {
-          paymentData.to_number = tillNumber.replace(/\s+/g, '');
-        }
-
-        await axiosInstance.post('/pay/', paymentData);
-      }
-      
+      if (!mountedRef.current) return;
       setSuccess(true);
-      
+
       // Clear form
       setRecipientPhone('');
-      setBusinessNumber('');
-      setAccountNumber('');
-      setTillNumber('');
       setAmount('');
-      
+
       // Refresh accounts to show updated balance
       await fetchAccounts();
-      
-      // Redirect after 2 seconds
+
+      // FIX: Guard router call so it doesn't fire on unmounted component
       setTimeout(() => {
-        router.replace('/');
+        if (mountedRef.current) {
+          router.replace('/');
+        }
       }, 2000);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Payment error:', err);
-      const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to process payment. Please try again.';
+      if (!mountedRef.current) return;
+      const errorMessage =
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to process payment. Please try again.';
       setError(errorMessage);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
-  // Get selected account details
-  const selectedAccount = accounts.find(acc => acc.id === parseInt(sourceAccountId));
+  // FIX: Compare by string consistently everywhere
+  const selectedAccount = accounts.find(
+    acc => acc.id.toString() === sourceAccountId
+  );
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
@@ -191,7 +186,7 @@ const Payments = () => {
             >
               <Text className="text-gray-700 text-2xl">←</Text>
             </TouchableOpacity>
-            <Text className="text-xl font-semibold text-gray-900">M-Pesa Payment</Text>
+            <Text className="text-xl font-semibold text-gray-900">Mobile Money Payment</Text>
           </View>
         </View>
 
@@ -214,12 +209,12 @@ const Payments = () => {
           )}
 
           {/* Error Message */}
-          {error && (
+          {error ? (
             <View className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex-row items-start gap-3">
               <Text className="text-red-600 text-lg">⚠️</Text>
               <Text className="flex-1 text-sm text-red-800">{error}</Text>
             </View>
-          )}
+          ) : null}
 
           {!loadingAccounts && accounts.length === 0 && (
             <View className="items-center py-12 bg-white rounded-2xl border border-gray-100">
@@ -235,45 +230,6 @@ const Payments = () => {
 
           {!loadingAccounts && accounts.length > 0 && (
             <>
-              {/* Payment Type */}
-              <View className="mb-6">
-                <Text className="text-sm font-medium text-gray-700 mb-3">
-                  Payment Type
-                </Text>
-                <View className="flex-row gap-3">
-                  {paymentTypes.map((type) => (
-                    <TouchableOpacity
-                      key={type.id}
-                      onPress={() => {
-                        setPaymentType(type.id);
-                        setError('');
-                      }}
-                      disabled={loading}
-                      className={`flex-1 p-4 rounded-xl border-2 ${
-                        paymentType === type.id
-                          ? 'border-green-600 bg-green-50'
-                          : 'border-gray-200 bg-white'
-                      }`}
-                    >
-                      <View className="items-center gap-2">
-                        <View
-                          className={`w-10 h-10 rounded-full items-center justify-center ${
-                            paymentType === type.id ? 'bg-green-600' : 'bg-gray-100'
-                          }`}
-                        >
-                          <Text className="text-lg">
-                            {type.icon}
-                          </Text>
-                        </View>
-                        <Text className="text-xs font-medium text-gray-900 text-center">
-                          {type.name}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
               {/* Source Account Selection */}
               <View className="mb-6">
                 <Text className="text-sm font-medium text-gray-700 mb-2">
@@ -290,8 +246,8 @@ const Payments = () => {
                   >
                     {accounts.map((account) => (
                       <Picker.Item
-                        key={account.id}
-                        label={`${account.account_name} - KES ${parseFloat(account.balance).toLocaleString()}`}
+                        key={account.id.toString()}
+                        label={`${account.account_name} - KES ${account.balance.toLocaleString()}`}
                         value={account.id.toString()}
                       />
                     ))}
@@ -315,10 +271,10 @@ const Payments = () => {
                 )}
               </View>
 
-              {/* From Field - Shows M-Pesa number */}
+              {/* M-Pesa Number */}
               <View className="mb-6">
                 <Text className="text-sm font-medium text-gray-700 mb-2">
-                  M-Pesa Number
+                  Sender Phone Number
                 </Text>
                 <TextInput
                   value={defaultMpesaNumber}
@@ -326,88 +282,28 @@ const Payments = () => {
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-100 text-gray-700"
                 />
                 <Text className="text-xs text-gray-500 mt-2">
-                  Payment will be made from your registered M-Pesa number
+                  Payment will be made from your registered Phone Number
                 </Text>
               </View>
 
-              {/* Recipient Fields - Changes based on payment type */}
-              {paymentType === 'SENDMONEY' && (
-                <View className="mb-6">
-                  <Text className="text-sm font-medium text-gray-700 mb-2">
-                    Recipient Phone Number
-                  </Text>
-                  <TextInput
-                    value={recipientPhone}
-                    onChangeText={(text) => {
-                      setRecipientPhone(text);
-                      setError('');
-                    }}
-                    editable={!loading}
-                    keyboardType="phone-pad"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white text-gray-900"
-                    placeholder="0712345678"
-                    placeholderTextColor="#9ca3af"
-                  />
-                </View>
-              )}
-
-              {paymentType === 'PAYBILL' && (
-                <>
-                  <View className="mb-6">
-                    <Text className="text-sm font-medium text-gray-700 mb-2">
-                      Business Number
-                    </Text>
-                    <TextInput
-                      value={businessNumber}
-                      onChangeText={(text) => {
-                        setBusinessNumber(text);
-                        setError('');
-                      }}
-                      editable={!loading}
-                      keyboardType="numeric"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white text-gray-900"
-                      placeholder="e.g., 400200"
-                      placeholderTextColor="#9ca3af"
-                    />
-                  </View>
-                  <View className="mb-6">
-                    <Text className="text-sm font-medium text-gray-700 mb-2">
-                      Account Number
-                    </Text>
-                    <TextInput
-                      value={accountNumber}
-                      onChangeText={(text) => {
-                        setAccountNumber(text);
-                        setError('');
-                      }}
-                      editable={!loading}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white text-gray-900"
-                      placeholder="e.g., ACC12345"
-                      placeholderTextColor="#9ca3af"
-                    />
-                  </View>
-                </>
-              )}
-
-              {paymentType === 'BUYGOOD' && (
-                <View className="mb-6">
-                  <Text className="text-sm font-medium text-gray-700 mb-2">
-                    Till Number
-                  </Text>
-                  <TextInput
-                    value={tillNumber}
-                    onChangeText={(text) => {
-                      setTillNumber(text);
-                      setError('');
-                    }}
-                    editable={!loading}
-                    keyboardType="numeric"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white text-gray-900"
-                    placeholder="e.g., 123456"
-                    placeholderTextColor="#9ca3af"
-                  />
-                </View>
-              )}
+              {/* Recipient Phone Number */}
+              <View className="mb-6">
+                <Text className="text-sm font-medium text-gray-700 mb-2">
+                  Recipient Phone Number
+                </Text>
+                <TextInput
+                  value={recipientPhone}
+                  onChangeText={(text) => {
+                    setRecipientPhone(text);
+                    setError('');
+                  }}
+                  editable={!loading}
+                  keyboardType="phone-pad"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white text-gray-900"
+                  placeholder="0712345678"
+                  placeholderTextColor="#9ca3af"
+                />
+              </View>
 
               {/* Amount */}
               <View className="mb-6">
@@ -445,20 +341,9 @@ const Payments = () => {
               {/* Make Payment Button */}
               <TouchableOpacity
                 onPress={handleMakePayment}
-                disabled={
-                  loading || 
-                  !amount || 
-                  parseFloat(amount) <= 0 ||
-                  !sourceAccountId ||
-                  (paymentType === 'SENDMONEY' && !recipientPhone) ||
-                  (paymentType === 'PAYBILL' && (!businessNumber || !accountNumber)) ||
-                  (paymentType === 'BUYGOOD' && !tillNumber)
-                }
+                disabled={loading || !amount || parseFloat(amount) <= 0 || !sourceAccountId || !recipientPhone}
                 className={`w-full py-4 rounded-xl items-center flex-row justify-center gap-2 ${
-                  loading || !amount || parseFloat(amount) <= 0 || !sourceAccountId ||
-                  (paymentType === 'SENDMONEY' && !recipientPhone) ||
-                  (paymentType === 'PAYBILL' && (!businessNumber || !accountNumber)) ||
-                  (paymentType === 'BUYGOOD' && !tillNumber)
+                  loading || !amount || parseFloat(amount) <= 0 || !sourceAccountId || !recipientPhone
                     ? 'bg-gray-300'
                     : 'bg-green-600'
                 }`}
@@ -471,7 +356,7 @@ const Payments = () => {
                 ) : (
                   <>
                     <Text className="text-white text-lg">💸</Text>
-                    <Text className="text-white font-semibold">Make Payment</Text>
+                    <Text className="text-white font-semibold">Send Money</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -482,10 +367,10 @@ const Payments = () => {
                   <Text className="text-blue-600 text-lg">ℹ️</Text>
                   <View className="flex-1">
                     <Text className="font-semibold text-blue-900 text-sm mb-1">
-                      About M-Pesa Payments
+                      About Mobile Money Payments
                     </Text>
                     <Text className="text-xs text-blue-700">
-                      Payments will be processed through M-Pesa and deducted from the selected account. You'll receive a confirmation message once the payment is complete.
+                      Payments will be processed through Mobile Money and deducted from the selected account. You'll receive a confirmation message once the payment is complete.
                     </Text>
                   </View>
                 </View>
