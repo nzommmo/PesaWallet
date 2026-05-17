@@ -47,10 +47,10 @@ export class index extends Component {
 
   fetchDashboardData = async () => {
     this.setState({ loading: true, error: '' });
-    
+
     try {
       const accountsResponse = await axiosInstance.get('/accounts/');
-      
+
       const accountsData = Array.isArray(accountsResponse) ? accountsResponse : [];
       const formattedAccounts = accountsData.map(acc => ({
         id: acc.id,
@@ -60,15 +60,15 @@ export class index extends Component {
         category: acc.category,
         color: this.getAccountColor(acc.account_type, acc.category)
       }));
-      
+
       const totalBalance = formattedAccounts.reduce((sum, acc) => sum + acc.balance, 0);
-      
+
       const digitalAccounts = accountsData
         .filter(acc => acc.account_type === 'DIGITAL')
         .map(acc => {
           let timelinePercent = 50;
           let timelineText = '15/30 days';
-          
+
           if (acc.start_date && acc.end_date) {
             const start = new Date(acc.start_date);
             const end = new Date(acc.end_date);
@@ -76,12 +76,12 @@ export class index extends Component {
             const total = end - start;
             const elapsed = now - start;
             timelinePercent = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
-            
+
             const totalDays = Math.ceil(total / (1000 * 60 * 60 * 24));
             const elapsedDays = Math.ceil(elapsed / (1000 * 60 * 60 * 24));
             timelineText = `${Math.max(0, elapsedDays)}/${totalDays} days`;
           }
-          
+
           const balance = parseFloat(acc.balance || 0);
           const limitAmount = parseFloat(acc.limit_amount || 0);
           const healthPercentage = parseFloat(acc.health_percentage || 0);
@@ -91,24 +91,24 @@ export class index extends Component {
             id: acc.id,
             name: acc.account_name,
             category: acc.category || 'Uncategorized',
-            spent: spent,
+            spent,
             budget: limitAmount,
             timeline: timelineText,
-            timelinePercent: timelinePercent,
+            timelinePercent,
             color: this.getCategoryColor(acc.category || 'Uncategorized'),
-            balance: balance,
-            healthPercentage: healthPercentage
+            balance,
+            healthPercentage
           };
         });
-      
+
       this.setState({
         allAccounts: formattedAccounts,
         balance: totalBalance,
         envelopes: digitalAccounts
       });
-      
+
       this.generateAlerts(digitalAccounts);
-      
+
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
       this.setState({ error: 'Failed to load dashboard data. Please try again.' });
@@ -124,7 +124,7 @@ export class index extends Component {
 
   generateAlerts = (accounts) => {
     const newAlerts = [];
-    
+
     accounts.forEach(acc => {
       if (acc.balance < 100 && acc.balance > 0) {
         newAlerts.push({
@@ -134,7 +134,7 @@ export class index extends Component {
           color: 'yellow'
         });
       }
-      
+
       if (acc.balance === 0) {
         newAlerts.push({
           type: 'warning',
@@ -144,7 +144,7 @@ export class index extends Component {
         });
       }
     });
-    
+
     this.setState({ alerts: newAlerts });
   };
 
@@ -152,7 +152,7 @@ export class index extends Component {
     if (accountType === 'PRIMARY') {
       return { bg: '#2563eb', text: '#ffffff' };
     }
-    
+
     const categoryColors = {
       'Food': { bg: '#059669', text: '#ffffff' },
       'Transport': { bg: '#0891b2', text: '#ffffff' },
@@ -164,7 +164,7 @@ export class index extends Component {
       'Uncategorized': { bg: '#475569', text: '#ffffff' },
       'Other': { bg: '#6b7280', text: '#ffffff' }
     };
-    
+
     return categoryColors[category] || { bg: '#6b7280', text: '#ffffff' };
   };
 
@@ -191,7 +191,9 @@ export class index extends Component {
 
   handlePrevAccount = () => {
     this.setState(prevState => ({
-      selectedAccountIndex: (prevState.selectedAccountIndex - 1 + prevState.allAccounts.length) % prevState.allAccounts.length
+      selectedAccountIndex:
+        (prevState.selectedAccountIndex - 1 + prevState.allAccounts.length) %
+        prevState.allAccounts.length
     }));
   };
 
@@ -210,9 +212,9 @@ export class index extends Component {
   };
 
   render() {
-    const { 
-      showBalance, user, loading, refreshing, error, 
-      balance, envelopes, alerts, allAccounts, selectedAccountIndex 
+    const {
+      showBalance, user, loading, refreshing, error,
+      balance, envelopes, alerts, allAccounts, selectedAccountIndex
     } = this.state;
 
     const currentAccount = allAccounts[selectedAccountIndex];
@@ -228,9 +230,9 @@ export class index extends Component {
 
     return (
       <SafeAreaView className="flex-1 bg-gray-50">
-        <StatusBar 
-          barStyle="light-content" 
-          backgroundColor={currentAccount ? currentAccount.color.bg : '#2563eb'} 
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={currentAccount ? currentAccount.color.bg : '#2563eb'}
         />
         <ScrollView
           className="flex-1"
@@ -251,9 +253,9 @@ export class index extends Component {
           )}
 
           {/* Header Section */}
-          <View 
+          <View
             className="rounded-b-3xl pb-8 shadow-lg"
-            style={{ 
+            style={{
               backgroundColor: currentAccount ? currentAccount.color.bg : '#2563eb',
               paddingTop: StatusBar.currentHeight || 44,
               paddingHorizontal: 24
@@ -272,7 +274,9 @@ export class index extends Component {
                 className="w-12 h-12 bg-white/20 rounded-full items-center justify-center"
               >
                 <Text className="text-white font-semibold text-lg">
-                  {user?.full_name ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase() : 'JD'}
+                  {user?.full_name
+                    ? user.full_name.split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase()
+                    : 'JD'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -294,9 +298,11 @@ export class index extends Component {
                       <Text className="text-white text-lg">{showBalance ? '👁️' : '👁️‍🗨️'}</Text>
                     </TouchableOpacity>
                   </View>
-                  
+
                   <Text className="text-white text-3xl font-bold mb-4">
-                    {showBalance ? `KES ${currentAccount.balance.toLocaleString()}` : 'KES ••••••'}
+                    {showBalance
+                      ? `KES ${currentAccount.balance.toLocaleString()}`
+                      : 'KES ••••••'}
                   </Text>
 
                   {/* Account Navigation */}
@@ -305,7 +311,7 @@ export class index extends Component {
                       <TouchableOpacity onPress={this.handlePrevAccount}>
                         <Text className="text-white/70 text-2xl">‹</Text>
                       </TouchableOpacity>
-                      
+
                       <View className="flex-row items-center gap-1.5">
                         {allAccounts.map((_, index) => (
                           <TouchableOpacity
@@ -320,7 +326,7 @@ export class index extends Component {
                           </TouchableOpacity>
                         ))}
                       </View>
-                      
+
                       <TouchableOpacity onPress={this.handleNextAccount}>
                         <Text className="text-white/70 text-2xl">›</Text>
                       </TouchableOpacity>
@@ -340,7 +346,7 @@ export class index extends Component {
                   </Text>
                 </>
               )}
-              
+
               {/* Action Buttons */}
               <View className="flex-row gap-3">
                 <TouchableOpacity
@@ -349,12 +355,20 @@ export class index extends Component {
                 >
                   <Text className="text-gray-900 font-semibold">💸 Transfer</Text>
                 </TouchableOpacity>
+
+                {/* ── PAY: passes the currently-visible account's ID as a param ── */}
                 <TouchableOpacity
-                  onPress={() => router.push('/payments')}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/payments',
+                      params: { accountId: currentAccount?.id?.toString() ?? '' },
+                    })
+                  }
                   className="flex-1 bg-green-100/90 py-3 rounded-xl items-center"
                 >
                   <Text className="text-gray-900 font-semibold">💳 Pay</Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={() => router.push('/topup')}
                   className="flex-1 bg-white/20 py-3 rounded-xl items-center"
@@ -372,19 +386,25 @@ export class index extends Component {
                 <View
                   key={index}
                   className={`${
-                    alert.color === 'yellow' ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'
+                    alert.color === 'yellow'
+                      ? 'bg-yellow-50 border-yellow-200'
+                      : 'bg-green-50 border-green-200'
                   } border rounded-2xl p-4 flex-row items-start gap-3`}
                 >
                   <Text className="text-xl">⚠️</Text>
                   <View className="flex-1">
-                    <Text className={`font-semibold mb-1 ${
-                      alert.color === 'yellow' ? 'text-yellow-900' : 'text-green-900'
-                    }`}>
+                    <Text
+                      className={`font-semibold mb-1 ${
+                        alert.color === 'yellow' ? 'text-yellow-900' : 'text-green-900'
+                      }`}
+                    >
                       {alert.title}
                     </Text>
-                    <Text className={`text-sm ${
-                      alert.color === 'yellow' ? 'text-yellow-700' : 'text-green-700'
-                    }`}>
+                    <Text
+                      className={`text-sm ${
+                        alert.color === 'yellow' ? 'text-yellow-700' : 'text-green-700'
+                      }`}
+                    >
                       {alert.message}
                     </Text>
                   </View>
@@ -394,7 +414,7 @@ export class index extends Component {
           )}
 
           {/* Envelopes Component */}
-          <Envelopes 
+          <Envelopes
             envelopes={envelopes}
             onCreateEnvelope={this.handleCreateEnvelope}
             onDeleteEnvelope={this.handleDeleteEnvelope}

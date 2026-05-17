@@ -198,9 +198,9 @@ const Profile = () => {
           </TouchableOpacity>
         </View>
 
-        {/* ── Contact Details ── */}
+        {/* ── Account Details ── */}
         <View className="px-6 mt-6">
-          <SectionLabel label="Contact Details" />
+          <SectionLabel label="Account Details" />
           <View className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
             <InfoRow icon="👤" label="Full Name" value={displayName} />
             <Divider />
@@ -253,7 +253,7 @@ const Profile = () => {
               icon="🔒"
               label="Change Password"
               sublabel="Update your security credentials"
-              onPress={() => {}}
+              onPress={() => router.push('/passwordreset')}
             />
 
             {user?.is_superadmin && (

@@ -348,7 +348,9 @@ const accounts = () => {
 
         {/* Tabs */}
         <View className="flex-row gap-2">
-          {['transactions', 'analytics', 'insights'].map(tab => (
+          {['transactions', 'analytics'].map(tab => (
+          // {['transactions', 'analytics', 'insights'].map(tab => (
+
             <TouchableOpacity
               key={tab}
               onPress={() => setActiveTab(tab)}
@@ -425,78 +427,7 @@ const accounts = () => {
               </View>
             </View>
 
-            {/* Insights Tab */}
-            {activeTab === 'insights' && (
-              <View className="px-6 py-4 gap-4">
-                <View className="bg-blue-600 rounded-2xl p-6">
-                  <View className="flex-row items-start justify-between mb-4">
-                    <View className="flex-1">
-                      <Text className="text-sm text-blue-100 mb-2">Top Spending Category</Text>
-                      <Text className="text-2xl font-bold text-white mb-1">{insights.topCategory.name}</Text>
-                      <Text className="text-blue-100">KES {Math.round(insights.topCategory.amount).toLocaleString()}</Text>
-                    </View>
-                    <View className="bg-white/20 px-3 py-1 rounded-full">
-                      <Text className="text-sm font-semibold text-white">{insights.topCategory.percentage}%</Text>
-                    </View>
-                  </View>
-                  <Text className="text-sm text-blue-100">of total spending this month</Text>
-                </View>
-
-                {/* Spending Trend */}
-                <View className="bg-white rounded-2xl p-4 border border-gray-100 flex-row items-start gap-3">
-                  <View className={`w-10 h-10 rounded-full items-center justify-center ${
-                    insights.spendingTrend.direction === 'increasing' ? 'bg-yellow-100' : 'bg-green-100'
-                  }`}>
-                    <Text className="text-xl">
-                      {insights.spendingTrend.direction === 'increasing' ? '📈' : '📉'}
-                    </Text>
-                  </View>
-                  <View className="flex-1">
-                    <Text className="font-semibold text-gray-900 mb-1">Spending Trend</Text>
-                    <Text className="text-sm text-gray-600">{insights.spendingTrend.description}</Text>
-                  </View>
-                </View>
-
-                {/* Budget Performance */}
-                <View className="bg-white rounded-2xl p-4 border border-gray-100 flex-row items-start gap-3">
-                  <View className="w-10 h-10 bg-green-100 rounded-full items-center justify-center">
-                    <Text className="text-xl">💰</Text>
-                  </View>
-                  <View className="flex-1">
-                    <Text className="font-semibold text-gray-900 mb-1">Spending Breakdown</Text>
-                    <Text className="text-sm text-gray-600">{insights.budgetPerformance.description}</Text>
-                  </View>
-                </View>
-
-                {/* Savings Suggestion */}
-                {insights.savingsSuggestion.amount > 0 && (
-                  <View className="bg-white rounded-2xl p-4 border border-gray-100 flex-row items-start gap-3">
-                    <View className="w-10 h-10 bg-purple-100 rounded-full items-center justify-center">
-                      <Text className="text-xl">💡</Text>
-                    </View>
-                    <View className="flex-1">
-                      <Text className="font-semibold text-gray-900 mb-1">Savings Suggestion</Text>
-                      <Text className="text-sm text-gray-600">
-                        You could save KES {insights.savingsSuggestion.amount.toLocaleString()} by reducing {insights.savingsSuggestion.from} spending
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Net Change Card */}
-                <View className={`rounded-2xl p-6 ${
-                  summary.netChange >= 0 ? 'bg-green-600' : 'bg-red-600'
-                }`}>
-                  <Text className="text-sm text-white/90 mb-2">Net Change This Month</Text>
-                  <Text className="text-3xl font-bold text-white">
-                    {summary.netChange >= 0 ? '+' : ''}KES {summary.netChange.toLocaleString()}
-                  </Text>
-                  <Text className="text-sm text-white/90 mt-2">
-                    {summary.transactionCount} transactions
-                  </Text>
-                </View>
-              </View>
-            )}
+            
 
             {/* Analytics Tab */}
             {activeTab === 'analytics' && (
