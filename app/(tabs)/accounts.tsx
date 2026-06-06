@@ -50,9 +50,24 @@ const accounts = () => {
     setError('');
 
     try {
-      const response = await axiosInstance.get('/recent/transactions/');
+      // Fetch transactions and accounts in parallel
+      const [txnResponse, accountsResponse] = await Promise.all([
+        axiosInstance.get('/recent/transactions/'),
+        axiosInstance.get('/accounts/'),
+      ]);
+
       // API returns { total_transactions, transactions: [...] }
-      const rawTransactions = response.transactions || [];
+      const rawTransactions = txnResponse.transactions || [];
+
+      // Build envelope name → limit_amount map from DIGITAL accounts
+      const raw = accountsResponse?.data ?? accountsResponse;
+      const accountsData = Array.isArray(raw) ? raw : [];
+      const envelopeBudgetMap: Record<string, number> = {};
+      accountsData
+        .filter((acc) => acc.account_type === 'DIGITAL')
+        .forEach((acc) => {
+          envelopeBudgetMap[acc.account_name] = parseFloat(acc.limit_amount || '0');
+        });
 
       const processedTransactions = processTransactions(rawTransactions);
 
@@ -60,7 +75,7 @@ const accounts = () => {
       calculateSummary(processedTransactions);
       generateInsights(processedTransactions);
       generateWeeklySpending(processedTransactions);
-      generateCategorySpending(processedTransactions);
+      generateCategorySpending(processedTransactions, envelopeBudgetMap);
 
     } catch (err) {
       console.error('Failed to fetch monitoring data:', err);
@@ -80,8 +95,6 @@ const accounts = () => {
     return txnData
       .map((txn, index) => {
         const isIncome = txn.direction === 'IN';
-        // For envelope payments, source is the envelope name (e.g. "Shopping", "Fuel")
-        // For income, destination is the account receiving funds
         const category = txn.direction === 'OUT'
           ? (txn.source || 'Unknown')
           : (txn.destination || 'Unknown');
@@ -146,7 +159,9 @@ const accounts = () => {
       .reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
 
     const trendDirection = secondHalf > firstHalf ? 'increasing' : 'decreasing';
-    const trendPercentage = firstHalf > 0 ? Math.abs(((secondHalf - firstHalf) / firstHalf) * 100).toFixed(1) : 0;
+    const trendPercentage = firstHalf > 0
+      ? Math.abs(((secondHalf - firstHalf) / firstHalf) * 100).toFixed(1)
+      : 0;
 
     const totalExpense = expenseTransactions.reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
 
@@ -197,36 +212,24 @@ const accounts = () => {
     setWeeklySpending(weekData);
   };
 
-  const generateCategorySpending = (txns) => {
-    // Group PAYMENT transactions by source envelope
-    const envelopeMap: Record<string, { spent: number; allocated: number }> = {};
+  const generateCategorySpending = (
+    txns,
+    envelopeBudgetMap: Record<string, number> = {}
+  ) => {
+    // Accumulate spending per envelope from PAYMENT transactions only (no double-counting)
+    const envelopeMap: Record<string, { spent: number }> = {};
 
     txns.forEach(txn => {
-      const raw = txn; // already processed
-      if (txn.type === 'expense' && txn.source && txn.source !== 'Primary Account') {
-        // Payment out of an envelope
-        if (!envelopeMap[txn.source]) envelopeMap[txn.source] = { spent: 0, allocated: 0 };
+      if (txn.tag === 'Payment' && txn.source && txn.source !== 'Primary Account') {
+        if (!envelopeMap[txn.source]) envelopeMap[txn.source] = { spent: 0 };
         envelopeMap[txn.source].spent += Math.abs(txn.amount);
-      }
-      if (txn.type === 'income' && txn.direction === 'OUT' && txn.destination && txn.destination !== 'Primary Account') {
-        // Allocation into an envelope (ALLOCATION type maps to 'income' direction-wise but goes OUT)
-        if (!envelopeMap[txn.destination]) envelopeMap[txn.destination] = { spent: 0, allocated: 0 };
-        envelopeMap[txn.destination].allocated += Math.abs(txn.amount);
-      }
-    });
-
-    // Also capture ALLOCATION transactions (type = 'income' in processTransactions but direction OUT)
-    // Re-scan raw processed transactions for allocations
-    txns.forEach(txn => {
-      if (txn.tag === 'Allocation' && txn.destination && txn.destination !== 'Primary Account') {
-        if (!envelopeMap[txn.destination]) envelopeMap[txn.destination] = { spent: 0, allocated: 0 };
-        envelopeMap[txn.destination].allocated += Math.abs(txn.amount);
       }
     });
 
     const spending = Object.entries(envelopeMap)
       .map(([name, data]) => {
-        const budget = data.allocated || data.spent; // fallback: if no allocation tracked, use spent as budget
+        // Use real limit_amount from accounts API; fall back to spent if envelope not found
+        const budget = envelopeBudgetMap[name] ?? data.spent;
         const remaining = Math.max(0, budget - data.spent);
         return {
           name,
@@ -349,8 +352,6 @@ const accounts = () => {
         {/* Tabs */}
         <View className="flex-row gap-2">
           {['transactions', 'analytics'].map(tab => (
-          // {['transactions', 'analytics', 'insights'].map(tab => (
-
             <TouchableOpacity
               key={tab}
               onPress={() => setActiveTab(tab)}
@@ -427,8 +428,6 @@ const accounts = () => {
               </View>
             </View>
 
-            
-
             {/* Analytics Tab */}
             {activeTab === 'analytics' && (
               <View className="px-6 py-4 gap-6">
@@ -462,7 +461,7 @@ const accounts = () => {
                   </View>
                 </View>
 
-                {/* Spending by Category */}
+                {/* Envelope Spending Overview */}
                 <View className="bg-white rounded-2xl p-5 border border-gray-100">
                   <Text className="font-semibold text-gray-900 mb-4">Envelope Spending Overview</Text>
                   {categorySpending.length === 0 ? (
@@ -554,7 +553,6 @@ const accounts = () => {
                     </View>
                   ) : (
                     filteredTransactions.map((transaction) => (
-                      // ← key={transaction.id} — now guaranteed unique & non-null
                       <View key={transaction.id} className="bg-white rounded-2xl p-4 border border-gray-100 flex-row items-center gap-3">
                         <View className={`w-10 h-10 rounded-full items-center justify-center ${
                           transaction.type === 'transfer' ? 'bg-blue-100' :
