@@ -13,12 +13,7 @@ export default function RootLayout() {
 
   })
 
-  // useEffect(() => {
-  //   // Handle 401 errors globally
-  //   setUnauthorizedHandler(() => {
-  //     router.replace('/(auth)/Welcome');
-  //   });
-  // }, []);
+
 
   useEffect (()=>{
     if(error) throw error;
@@ -27,7 +22,6 @@ export default function RootLayout() {
 
   return ( 
   <Stack screenOptions={{ headerShown: false }}>
-      {/* <Stack.Screen name="index" /> */}
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
     </Stack>

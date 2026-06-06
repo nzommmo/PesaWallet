@@ -41,13 +41,27 @@ export class Envelopes extends Component {
     return Math.min(100, Math.round((spent / budget) * 100));
   };
 
+  handleViewEnvelope = (envelopeId) => {
+    router.push({
+      pathname: '/accounts/[id]',
+      params: { id: envelopeId },
+    });
+  };
+
   handleViewTransactions = (envelopeId) => {
     router.push(`/envelope/${envelopeId}/transactions`);
   };
 
   handleCreateEnvelope = () => {
-    router.push('/envelopes/create')
-  }
+    router.push('/envelopes/create');
+  };
+
+  handleEditEnvelope = (envelopeId) => {
+    router.push({
+      pathname: '/envelopes/edit/[id]',
+      params: { id: envelopeId },
+    });
+  };
 
   handleDeleteClick = (envelope) => {
     this.setState({ deleteModal: { show: true, envelope } });
@@ -56,7 +70,7 @@ export class Envelopes extends Component {
   handleDeleteConfirm = async () => {
     const { envelope } = this.state.deleteModal;
     if (!envelope) return;
-    
+
     this.setState({ deleting: true });
     try {
       await this.props.onDeleteEnvelope(envelope.id);
@@ -120,10 +134,13 @@ export class Envelopes extends Component {
               const healthColor = this.getHealthColor(healthPercentage);
               const isOverspent = envelope.spent > envelope.budget;
               const categoryColor = this.getCategoryColor(envelope.category);
-              
+
               return (
-                <View
+                // Tapping the card body opens the detail view
+                <TouchableOpacity
                   key={envelope.id}
+                  activeOpacity={0.85}
+                  onPress={() => this.handleViewEnvelope(envelope.id)}
                   className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
                 >
                   {/* Header */}
@@ -131,7 +148,7 @@ export class Envelopes extends Component {
                     <View className="flex-1">
                       <View className="flex-row items-center gap-2 mb-1">
                         <Text className="font-semibold text-gray-900">{envelope.name}</Text>
-                        <View 
+                        <View
                           className="px-2 py-1 rounded-full"
                           style={{ backgroundColor: `${categoryColor}20` }}
                         >
@@ -147,20 +164,27 @@ export class Envelopes extends Component {
                         KES {envelope.balance.toLocaleString()} available
                       </Text>
                     </View>
-                    <View className="flex-row items-center gap-2">
+                    {/* <View className="flex-row items-center gap-2">
                       <TouchableOpacity
-                        onPress={() => this.handleViewTransactions(envelope.id)}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          this.handleViewTransactions(envelope.id);
+                        }}
                         className="p-2 rounded-lg"
                       >
                         <Text className="text-blue-600">👁️</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        onPress={() => this.handleDeleteClick(envelope)}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          this.handleDeleteClick(envelope);
+                        }}
                         className="p-2 rounded-lg"
                       >
                         <Text className="text-red-600">🗑️</Text>
                       </TouchableOpacity>
-                    </View>
+                    </View> */}
+
                   </View>
 
                   {/* Spending Progress */}
@@ -170,7 +194,7 @@ export class Envelopes extends Component {
                         <Text className="text-xs text-gray-600">
                           Spent: KES {envelope.spent.toLocaleString()} / {envelope.budget.toLocaleString()}
                         </Text>
-                        <Text 
+                        <Text
                           className={`text-xs ${isOverspent ? 'text-red-600 font-semibold' : 'text-gray-600'}`}
                         >
                           {spendingPercent}%
@@ -179,7 +203,7 @@ export class Envelopes extends Component {
                       <View className="w-full bg-gray-200 rounded-full h-2">
                         <View
                           className="h-2 rounded-full"
-                          style={{ 
+                          style={{
                             width: `${spendingPercent}%`,
                             backgroundColor: isOverspent ? '#dc2626' : categoryColor
                           }}
@@ -199,7 +223,7 @@ export class Envelopes extends Component {
                     <View className="w-full bg-gray-200 rounded-full h-2">
                       <View
                         className="h-2 rounded-full"
-                        style={{ 
+                        style={{
                           width: `${healthPercentage}%`,
                           backgroundColor: healthColor
                         }}
@@ -224,16 +248,17 @@ export class Envelopes extends Component {
                   {/* Rules Info */}
                   <View className="flex-row items-center gap-3 mb-4">
                     <Text className="text-xs text-gray-500">
-                      <Text className="font-medium">Overspend:</Text> {
-                        envelope.overspendRule === 'WARN' ? 'Warn' : 
-                        envelope.overspendRule === 'BLOCK' ? 'Block' : 'Allow'
-                      }
+                      <Text className="font-medium">Overspend:</Text>{' '}
+                      {envelope.overspendRule === 'WARN'
+                        ? 'Warn'
+                        : envelope.overspendRule === 'BLOCK'
+                        ? 'Block'
+                        : 'Allow'}
                     </Text>
                     {envelope.rolloverRule && (
                       <Text className="text-xs text-gray-500">
-                        <Text className="font-medium">Rollover:</Text> {
-                          envelope.rolloverRule === 'ROLLOVER' ? 'Yes' : 'No'
-                        }
+                        <Text className="font-medium">Rollover:</Text>{' '}
+                        {envelope.rolloverRule === 'ROLLOVER' ? 'Yes' : 'No'}
                       </Text>
                     )}
                   </View>
@@ -241,19 +266,26 @@ export class Envelopes extends Component {
                   {/* Action Buttons */}
                   <View className="flex-row gap-2">
                     <TouchableOpacity
-                      onPress={() => router.push('/payments')}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        router.push('/payments');
+                      }}
                       className="flex-1 py-2 rounded-lg items-center"
                     >
                       <Text className="text-blue-600 font-medium text-sm">Pay</Text>
                     </TouchableOpacity>
+
                     <TouchableOpacity
-                      onPress={() => router.push('/transfer')}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        router.push('/transfer');
+                      }}
                       className="flex-1 py-2 rounded-lg items-center"
                     >
                       <Text className="text-gray-700 font-medium text-sm">Transfer</Text>
                     </TouchableOpacity>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
@@ -279,7 +311,7 @@ export class Envelopes extends Component {
                   </Text>
                 </View>
               </View>
-              
+
               <View className="flex-row gap-3">
                 <TouchableOpacity
                   onPress={this.handleDeleteCancel}

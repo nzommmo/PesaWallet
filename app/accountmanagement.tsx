@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   ScrollView,
   Text,
   TextInput,
@@ -31,7 +32,13 @@ const AccountManagement = () => {
   const [showBalances, setShowBalances] = useState(true);
   const [categories, setCategories] = useState<string[]>([]);
 
-  // FIX: Track mount state to prevent setState calls after unmount
+  // Delete modal state
+  const [deleteModal, setDeleteModal] = useState<{ show: boolean; account: Account | null }>({
+    show: false,
+    account: null,
+  });
+  const [deleting, setDeleting] = useState(false);
+
   const mountedRef = useRef(true);
   useEffect(() => {
     return () => {
@@ -53,15 +60,12 @@ const AccountManagement = () => {
     setError('');
     try {
       const response = await axiosInstance.get('/accounts/');
-
-      // FIX: Safely unwrap — axiosInstance may or may not auto-unwrap .data
       const raw = response?.data ?? response;
       const accountsData: Account[] = Array.isArray(raw) ? raw : [];
 
       if (!mountedRef.current) return;
       setAccounts(accountsData);
 
-      // FIX: Guard against accounts with missing/null account_name before filtering
       const uniqueCategories = [
         ...new Set(
           accountsData
@@ -69,9 +73,7 @@ const AccountManagement = () => {
             .map((acc) => acc.category as string)
         ),
       ];
-
       setCategories(uniqueCategories);
-
     } catch (err) {
       console.error('Failed to fetch accounts:', err);
       if (mountedRef.current) {
@@ -98,7 +100,6 @@ const AccountManagement = () => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter((acc) => {
-        // FIX: Guard against null/undefined account_name before calling .toLowerCase()
         const nameMatch = acc.account_name
           ? acc.account_name.toLowerCase().includes(q)
           : false;
@@ -110,6 +111,24 @@ const AccountManagement = () => {
     }
 
     setFilteredAccounts(filtered);
+  };
+
+  // Same endpoint pattern as Envelopes' onDeleteEnvelope
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal.account) return;
+    setDeleting(true);
+    try {
+      await axiosInstance.delete(`/accounts/${deleteModal.account.id}/`);
+      setDeleteModal({ show: false, account: null });
+      await fetchData();
+    } catch (err) {
+      console.error('Failed to delete account:', err);
+      setDeleteModal({ show: false, account: null });
+    } finally {
+      if (mountedRef.current) {
+        setDeleting(false);
+      }
+    }
   };
 
   const getAccountColor = (accountType: string, category?: string) => {
@@ -137,7 +156,6 @@ const AccountManagement = () => {
 
   const getTotalBalance = () => {
     return filteredAccounts.reduce((sum, acc) => {
-      // FIX: Guard against NaN from missing or malformed balance values
       const parsed = parseFloat(String(acc.balance ?? '0'));
       return sum + (isNaN(parsed) ? 0 : parsed);
     }, 0);
@@ -270,7 +288,6 @@ const AccountManagement = () => {
               <View className="gap-3">
                 {filteredAccounts.map((account) => {
                   const colors = getAccountColor(account.account_type, account.category);
-                  // FIX: Guard balance parse at render time too
                   const balance = parseFloat(String(account.balance ?? '0'));
                   const displayBalance = isNaN(balance) ? 0 : balance;
 
@@ -283,7 +300,6 @@ const AccountManagement = () => {
                         <View className="flex-1">
                           <View className="flex-row items-center gap-2 mb-1 flex-wrap">
                             <Text className="font-semibold text-gray-900">
-                              {/* FIX: Guard against null account_name */}
                               {account.account_name ?? '—'}
                             </Text>
                             <View className={`px-2 py-0.5 rounded-full ${colors.bg}`}>
@@ -300,10 +316,19 @@ const AccountManagement = () => {
                               : 'KES ••••••'}
                           </Text>
                         </View>
-                        <View className={`w-12 h-12 ${colors.bg} rounded-xl items-center justify-center`}>
-                          <Text className="text-2xl">
-                            {account.account_type === 'PRIMARY' ? '👛' : '💳'}
-                          </Text>
+                        {/* Delete icon in header, same position as Envelopes 🗑️ */}
+                        <View className="flex-row items-center gap-1">
+                          <View className={`w-12 h-12 ${colors.bg} rounded-xl items-center justify-center`}>
+                            <Text className="text-2xl">
+                              {account.account_type === 'PRIMARY' ? '👛' : '💳'}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => setDeleteModal({ show: true, account })}
+                            className="p-2 rounded-lg"
+                          >
+                            <Text className="text-red-600">🗑️</Text>
+                          </TouchableOpacity>
                         </View>
                       </View>
 
@@ -377,6 +402,54 @@ const AccountManagement = () => {
           <Text className="text-white text-3xl">+</Text>
         </TouchableOpacity>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={deleteModal.show}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setDeleteModal({ show: false, account: null })}
+      >
+        <View className="flex-1 bg-black/50 items-center justify-center p-4">
+          <View className="bg-white rounded-2xl p-6 max-w-sm w-full">
+            <View className="flex-row items-start gap-4 mb-4">
+              <View className="w-12 h-12 bg-red-100 rounded-full items-center justify-center">
+                <Text className="text-2xl">🗑️</Text>
+              </View>
+              <View className="flex-1">
+                <Text className="text-lg font-bold text-gray-900 mb-1">Delete Account?</Text>
+                <Text className="text-sm text-gray-600">
+                  Are you sure you want to delete "{deleteModal.account?.account_name}"? This action cannot be undone.
+                </Text>
+              </View>
+            </View>
+
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={() => setDeleteModal({ show: false, account: null })}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-xl items-center"
+              >
+                <Text className="text-gray-700 font-medium">Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleDeleteConfirm}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 bg-red-600 rounded-xl items-center flex-row justify-center gap-2"
+              >
+                {deleting ? (
+                  <>
+                    <ActivityIndicator size="small" color="#ffffff" />
+                    <Text className="text-white font-medium">Deleting...</Text>
+                  </>
+                ) : (
+                  <Text className="text-white font-medium">Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
